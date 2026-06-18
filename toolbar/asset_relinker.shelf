@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <toolshelf name="asset_relinker" label="Asset Relinker">
+    <tool name="asset_relinker_open" label="Asset Relinker" icon="BUTTONS_reload" helpText="Scan and replace external asset paths in the current hip file.">
+      <script scriptType="python"><![CDATA[
+from houdini_asset_relinker.ui import open_dialog
+open_dialog()
+      ]]></script>
+    </tool>
+  </toolshelf>
+</shelfDocument>

@@ -1,0 +1,32 @@
+[project]
+name = "houdini-asset-relinker"
+version = "0.1.0"
+description = "Houdini HOM utility to scan and relink external asset paths in a hip file."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "N", "UP", "W"]
+ignore = ["N802"]
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+
+[tool.uv]
+link-mode = "copy"
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts/python"]
+testpaths = ["tests"]

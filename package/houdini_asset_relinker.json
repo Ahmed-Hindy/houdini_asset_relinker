@@ -1,0 +1,14 @@
+{
+  "load_package_once": true,
+  "env": [
+    {
+      "ASSET_RELINKER_ROOT": "F:/Users/Ahmed Hindy/Documents/houdiniTools/houdini_asset_relinker"
+    },
+    {
+      "HOUDINI_PATH": {
+        "method": "prepend",
+        "value": "$ASSET_RELINKER_ROOT"
+      }
+    }
+  ]
+}

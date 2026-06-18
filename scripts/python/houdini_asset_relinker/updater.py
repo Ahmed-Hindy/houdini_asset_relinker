@@ -76,7 +76,12 @@ def replace_path_root(
 
 
 def replace_hda_library_paths(
-    find_text: str, replace_with: str, dry_run: bool = True, uninstall_old: bool = False
+    find_text: str,
+    replace_with: str,
+    dry_run: bool = True,
+    uninstall_old: bool = False,
+    references: Optional[Iterable[AssetReference]] = None,
+    case_sensitive: bool = True,
 ) -> UpdateReport:
     """Replace loaded HDA library file paths in the current Houdini session.
 
@@ -85,14 +90,19 @@ def replace_hda_library_paths(
         replace_with: Replacement text.
         dry_run: When True, report what would change without modifying the session.
         uninstall_old: When applying, uninstall old libraries after installing replacements.
+        references: Optional pre-scanned references. When omitted, loaded HDA libraries are scanned.
+        case_sensitive: Whether matching should be case-sensitive.
 
     Returns:
         An update report.
     """
-    hou = get_hou()
+    hou = None if dry_run else get_hou()
     results = []
-    for reference in scan_hda_libraries():
-        new_path = replace_text(reference.raw_path, find_text, replace_with)
+    current_references = list(references) if references is not None else scan_hda_libraries()
+    for reference in current_references:
+        if reference.kind != ReferenceKind.HDA_LIBRARY:
+            continue
+        new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
         if new_path is None:
             continue
         if reference.raw_path == "Embedded":
@@ -111,6 +121,9 @@ def replace_hda_library_paths(
             )
             continue
         try:
+            if hou is None:
+                message = "Houdini module was not available for applying HDA library changes."
+                raise RuntimeError(message)
             hou.hda.installFile(new_path)
             if uninstall_old:
                 hou.hda.uninstallFile(reference.raw_path)

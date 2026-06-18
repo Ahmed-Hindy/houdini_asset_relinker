@@ -95,6 +95,27 @@ open_dialog()
 
 You should also see a toolbar/shelf tool named **Asset Relinker**.
 
+The shelf opens a full PySide window inside Houdini. On Houdini 21.0 it uses the
+Qt binding provided by Houdini, typically PySide2. The window includes:
+
+- Scene scanning with optional HDA library references.
+- Sortable and filterable reference table.
+- Missing/writable/HDA summary counters.
+- Selected-reference details, copy, reveal-on-disk, and select-node actions.
+- CSV export.
+- Dry-run find/replace preview before applying parameter path updates.
+- Optional HDA library relinking with an uninstall-old-library toggle.
+
+For standalone development outside Houdini, install the optional PySide6 extra:
+
+```powershell
+uv --system-certs sync --extra pyside6
+uv --system-certs run --extra pyside6 houdini-asset-relinker
+```
+
+Standalone mode can open the interface, but scanning and applying still require
+Houdini or hython because the backend reads the live `hou` session.
+
 ## Programmatic usage inside Houdini
 
 ```python
@@ -119,10 +140,10 @@ From PowerShell:
 
 ```powershell
 cd "F:\Users\Ahmed Hindy\Documents\houdiniTools\houdini_asset_relinker"
-uv sync
-uv run ruff check .
-uv run ruff format .
-uv run python -m pytest
+uv --system-certs sync
+uv --system-certs run ruff check .
+uv --system-certs run ruff format .
+uv --system-certs run python -m pytest
 ```
 
 The runtime Houdini tool does not require third-party packages installed into Houdini. `uv`, `ruff`, and `pytest` are only for development outside Houdini.

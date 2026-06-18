@@ -6,7 +6,11 @@ import sys
 from types import SimpleNamespace
 
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
-from houdini_asset_relinker.updater import replace_path_root, replace_path_text
+from houdini_asset_relinker.updater import (
+    replace_hda_library_paths,
+    replace_path_root,
+    replace_path_text,
+)
 
 
 class FakeParm:
@@ -96,3 +100,27 @@ def test_replace_path_text_reports_missing_parameter_on_apply(monkeypatch) -> No
 
     assert report.failed_count == 1
     assert report.results[0].message == "Parameter no longer exists."
+
+
+def test_replace_hda_library_paths_dry_run_accepts_prescanned_references() -> None:
+    """It previews HDA library updates from scanned rows without importing hou."""
+    report = replace_hda_library_paths(
+        "old_show",
+        "new_show",
+        dry_run=True,
+        case_sensitive=False,
+        references=[
+            AssetReference(
+                kind=ReferenceKind.HDA_LIBRARY,
+                raw_path="P:/OLD_SHOW/assets/tool.hda",
+                expanded_path="P:/OLD_SHOW/assets/tool.hda",
+                exists=True,
+                can_update=True,
+            ),
+            _reference("P:/OLD_SHOW/cache/a.bgeo.sc"),
+        ],
+    )
+
+    assert report.changed_count == 1
+    assert report.results[0].status == "would_change"
+    assert report.results[0].new_path == "P:/new_show/assets/tool.hda"

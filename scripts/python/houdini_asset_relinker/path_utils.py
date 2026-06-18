@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from glob import glob
 from pathlib import Path
 from typing import Optional
 
@@ -31,11 +32,7 @@ def path_exists(expanded_path: str) -> bool:
         return False
     if contains_sequence_token(expanded_path):
         glob_pattern = _FRAME_TOKEN_PATTERN.sub("*", expanded_path)
-        return (
-            any(Path().glob(glob_pattern))
-            if not Path(glob_pattern).is_absolute()
-            else bool(list(Path(glob_pattern).parent.glob(Path(glob_pattern).name)))
-        )
+        return bool(glob(glob_pattern))
     return Path(expanded_path).exists()
 
 

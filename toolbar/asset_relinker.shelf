@@ -1,11 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <shelfDocument>
+  <!-- This file contains definitions of shelves, toolbars, and tools.
+ It should not be hand-edited when it is being used by the application.
+ Note, that two definitions of the same element are not allowed in
+ a single file. -->
+
   <toolshelf name="asset_relinker" label="Asset Relinker">
-    <tool name="asset_relinker_open" label="Asset Relinker" icon="BUTTONS_reload" helpText="Scan and replace external asset paths in the current hip file.">
-      <script scriptType="python"><![CDATA[
-from houdini_asset_relinker.ui import open_dialog
-open_dialog()
-      ]]></script>
-    </tool>
+    <memberTool name="asset_relinker_open"/>
   </toolshelf>
+
+  <tool name="asset_relinker_open" label="Asset Relinker" icon="BUTTONS_reload">
+    <helpText><![CDATA[Scan and replace external asset paths in the current hip file.]]></helpText>
+    <script scriptType="python"><![CDATA[from importlib import reload
+from houdini_asset_relinker import ui
+reload(ui)
+
+ui.open_dialog()
+    ]]></script>
+  </tool>
 </shelfDocument>

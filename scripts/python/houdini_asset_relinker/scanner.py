@@ -6,7 +6,7 @@ from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
-from houdini_asset_relinker.path_utils import path_exists
+from houdini_asset_relinker.path_utils import normalize_for_compare, path_exists
 
 
 def scan_assets(
@@ -26,11 +26,11 @@ def scan_assets(
     """
     references = scan_file_references(project_dir_variable, include_all_refs)
     if include_hda_libraries:
-        known_paths = {reference.expanded_path for reference in references}
+        known_paths = {normalize_for_compare(reference.expanded_path) for reference in references}
         references.extend(
             reference
             for reference in scan_hda_libraries()
-            if reference.expanded_path not in known_paths
+            if normalize_for_compare(reference.expanded_path) not in known_paths
         )
     return references
 

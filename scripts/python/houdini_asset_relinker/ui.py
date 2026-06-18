@@ -25,6 +25,7 @@ CUSTOM_CONTEXT_MENU = qt_enum("ContextMenuPolicy", "CustomContextMenu")
 ASCENDING_ORDER = qt_enum("SortOrder", "AscendingOrder")
 WAIT_CURSOR = qt_enum("CursorShape", "WaitCursor")
 ARROW_CURSOR = qt_enum("CursorShape", "ArrowCursor")
+TOOL_BUTTON_TEXT_ONLY = qt_enum("ToolButtonStyle", "ToolButtonTextOnly")
 INVALID_INDEX = QtCore.QModelIndex()
 try:
     ACTION_CLASS = QtGui.QAction
@@ -481,7 +482,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             if node is None:
                 self._warn("The selected node no longer exists.")
                 return
+            network_editor = self._network_editor_for_current_desktop(hou)
+            if network_editor is not None:
+                self._jump_network_editor_to_node(network_editor, node)
             node.setSelected(True, clear_all_selected=True)
+            if network_editor is not None:
+                self._frame_network_editor_selection(network_editor)
+                self._set_status(f"Selected and framed node: {reference.node_path}")
+            else:
+                self._set_status(f"Selected node: {reference.node_path}")
         except Exception as error:
             self._show_error("Could not select node", error)
 
@@ -494,17 +503,36 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _build_actions(self) -> None:
         self.scan_action = ACTION_CLASS("Scan", self)
+        self.scan_action.setToolTip("Scan the current Houdini scene for external asset references.")
+        self.scan_action.setStatusTip(
+            "Scan the current Houdini scene for external asset references."
+        )
         self.scan_action.setShortcut("F5")
         self.export_action = ACTION_CLASS("Export CSV", self)
+        self.export_action.setToolTip("Export the current reference table to a CSV report.")
+        self.export_action.setStatusTip("Export the current reference table to a CSV report.")
         self.copy_path_action = ACTION_CLASS("Copy Raw Path", self)
+        self.copy_path_action.setToolTip("Copy the selected reference's raw path expression.")
+        self.copy_path_action.setStatusTip("Copy the selected reference's raw path expression.")
         self.reveal_action = ACTION_CLASS("Reveal on Disk", self)
+        self.reveal_action.setToolTip("Open the selected reference's folder in Explorer.")
+        self.reveal_action.setStatusTip("Open the selected reference's folder in Explorer.")
         self.select_node_action = ACTION_CLASS("Select Node", self)
+        self.select_node_action.setToolTip(
+            "Jump the Network Editor to the selected reference's node and select it."
+        )
+        self.select_node_action.setStatusTip(
+            "Jump the Network Editor to the selected reference's node and select it."
+        )
         self.copy_report_action = ACTION_CLASS("Copy Report", self)
+        self.copy_report_action.setToolTip("Copy the latest preview or apply report.")
+        self.copy_report_action.setStatusTip("Copy the latest preview or apply report.")
         self.copy_report_action.setEnabled(False)
 
     def _build_ui(self) -> None:
         toolbar = self.addToolBar("Asset Relinker")
         toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(TOOL_BUTTON_TEXT_ONLY)
         toolbar.addAction(self.scan_action)
         toolbar.addAction(self.export_action)
         toolbar.addSeparator()
@@ -541,21 +569,35 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         self.project_variable_edit = QtWidgets.QLineEdit("HIP", self)
         self.project_variable_edit.setMaximumWidth(90)
-        self.project_variable_edit.setToolTip("Houdini variable used by hou.fileReferences.")
+        self.project_variable_edit.setToolTip(
+            "Houdini project variable passed to hou.fileReferences, usually HIP."
+        )
         self.include_all_refs_check = QtWidgets.QCheckBox("All refs", self)
         self.include_all_refs_check.setChecked(True)
+        self.include_all_refs_check.setToolTip(
+            "Include all Houdini file references instead of only selected references."
+        )
         self.include_hda_check = QtWidgets.QCheckBox("HDA libraries", self)
         self.include_hda_check.setChecked(True)
+        self.include_hda_check.setToolTip("Include loaded HDA library files in the scan.")
 
         self.scan_button = QtWidgets.QPushButton("Scan Scene", self)
         self.scan_button.setDefault(True)
+        self.scan_button.setMinimumWidth(92)
+        self.scan_button.setToolTip("Scan the current Houdini scene for external asset references.")
         self.export_button = QtWidgets.QPushButton("Export CSV", self)
+        self.export_button.setMinimumWidth(92)
+        self.export_button.setToolTip("Export the current reference table to a CSV report.")
 
         self.search_edit = QtWidgets.QLineEdit(self)
         self.search_edit.setPlaceholderText("Filter by node, parameter, path, or note")
+        self.search_edit.setToolTip("Filter references by node, parameter, path, kind, or note.")
         self.missing_only_check = QtWidgets.QCheckBox("Missing only", self)
+        self.missing_only_check.setToolTip("Show only references whose expanded paths are missing.")
         self.writable_only_check = QtWidgets.QCheckBox("Writable only", self)
+        self.writable_only_check.setToolTip("Show only references the relinker can update.")
         self.kind_combo = QtWidgets.QComboBox(self)
+        self.kind_combo.setToolTip("Limit the table to a specific reference kind.")
         self.kind_combo.addItem("All kinds", "all")
         self.kind_combo.addItem("File parameters", "file")
         self.kind_combo.addItem("HDA libraries", "hda")
@@ -616,6 +658,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.setColumnWidth(3, 220)
         self.reference_table.setColumnWidth(4, 300)
         self.reference_table.setColumnWidth(5, 300)
+        self.reference_table.setToolTip(
+            "Right-click a reference to copy its path, reveal it on disk, or select its node."
+        )
         layout.addWidget(self.reference_table, 1)
         return panel
 
@@ -634,18 +679,27 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         form = QtWidgets.QFormLayout()
         self.find_edit = QtWidgets.QLineEdit(self)
         self.find_edit.setPlaceholderText("P:/old_show or $JOB/assets")
+        self.find_edit.setToolTip("Path text to find in writable references.")
         self.replace_edit = QtWidgets.QLineEdit(self)
         self.replace_edit.setPlaceholderText("P:/new_show or $HIP/assets")
+        self.replace_edit.setToolTip("Replacement text to write into matching references.")
         form.addRow("Find", self.find_edit)
         form.addRow("Replace with", self.replace_edit)
         layout.addLayout(form)
 
         self.case_sensitive_check = QtWidgets.QCheckBox("Case sensitive", self)
         self.case_sensitive_check.setChecked(True)
+        self.case_sensitive_check.setToolTip("Match path text using exact letter case.")
         self.include_hda_replace_check = QtWidgets.QCheckBox("Relink HDA libraries too", self)
         self.include_hda_replace_check.setChecked(False)
+        self.include_hda_replace_check.setToolTip(
+            "Apply the replacement to matching loaded HDA library paths too."
+        )
         self.uninstall_old_hda_check = QtWidgets.QCheckBox(
             "Uninstall old HDA libraries after install", self
+        )
+        self.uninstall_old_hda_check.setToolTip(
+            "After installing replacement HDA libraries, unload the old matching libraries."
         )
         layout.addWidget(self.case_sensitive_check)
         layout.addWidget(self.include_hda_replace_check)
@@ -653,8 +707,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         button_row = QtWidgets.QHBoxLayout()
         self.preview_button = QtWidgets.QPushButton("Preview", self)
+        self.preview_button.setToolTip("Preview relink changes without modifying the scene.")
         self.apply_button = QtWidgets.QPushButton("Apply", self)
         self.apply_button.setEnabled(False)
+        self.apply_button.setToolTip("Apply the latest previewed relink changes.")
         button_row.addWidget(self.preview_button)
         button_row.addWidget(self.apply_button)
         layout.addLayout(button_row)
@@ -669,6 +725,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.report_table.setColumnWidth(1, 180)
         self.report_table.setColumnWidth(2, 250)
         self.report_table.setColumnWidth(3, 250)
+        self.report_table.setToolTip("Preview and apply results for the latest relink operation.")
         layout.addWidget(self.report_table, 1)
         return panel
 
@@ -678,6 +735,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         layout.setContentsMargins(10, 10, 10, 10)
         self.detail_text = QtWidgets.QPlainTextEdit(self)
         self.detail_text.setReadOnly(True)
+        self.detail_text.setToolTip("Full details for the selected reference.")
         layout.addWidget(self.detail_text, 1)
         return panel
 
@@ -742,11 +800,64 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         return self._reference_model.reference_at(source_index.row())
 
     def _show_reference_menu(self, position: QtCore.QPoint) -> None:
+        clicked_index = self.reference_table.indexAt(position)
+        if clicked_index.isValid():
+            self.reference_table.selectRow(clicked_index.row())
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.copy_path_action)
         menu.addAction(self.reveal_action)
         menu.addAction(self.select_node_action)
         _exec_dialog(menu, self.reference_table.viewport().mapToGlobal(position))
+
+    def _network_editor_for_current_desktop(self, hou: object) -> Optional[object]:
+        hou_ui = getattr(hou, "ui", None)
+        current_desktop = getattr(hou_ui, "curDesktop", None)
+        if current_desktop is None:
+            return None
+        desktop = current_desktop()
+        if desktop is None:
+            return None
+
+        pane_tab_type = getattr(hou, "paneTabType", None)
+        network_editor_type = getattr(pane_tab_type, "NetworkEditor", None)
+        pane_tab_of_type = getattr(desktop, "paneTabOfType", None)
+        if pane_tab_of_type is not None and network_editor_type is not None:
+            network_editor = pane_tab_of_type(network_editor_type)
+            if network_editor is not None:
+                return network_editor
+
+        pane_tabs = getattr(desktop, "paneTabs", None)
+        if pane_tabs is None:
+            return None
+        for pane_tab in pane_tabs():
+            pane_type = getattr(pane_tab, "type", None)
+            if network_editor_type is not None and pane_type is not None:
+                if pane_type() != network_editor_type:
+                    continue
+            if getattr(pane_tab, "setPwd", None) is not None:
+                return pane_tab
+        return None
+
+    def _jump_network_editor_to_node(self, network_editor: object, node: object) -> None:
+        parent_node = None
+        parent = getattr(node, "parent", None)
+        if parent is not None:
+            parent_node = parent()
+
+        set_pwd = getattr(network_editor, "setPwd", None)
+        if set_pwd is not None:
+            set_pwd(parent_node or node)
+
+        set_current_node = getattr(network_editor, "setCurrentNode", None)
+        if set_current_node is not None:
+            set_current_node(node)
+
+    def _frame_network_editor_selection(self, network_editor: object) -> None:
+        for method_name in ("homeToSelection", "frameSelection"):
+            frame_selection = getattr(network_editor, method_name, None)
+            if frame_selection is not None:
+                frame_selection()
+                return
 
     def _stat_label(self, label: str, value: str) -> QtWidgets.QFrame:
         frame = QtWidgets.QFrame(self)
@@ -817,6 +928,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                 border: 0;
                 spacing: 6px;
                 padding: 5px;
+            }
+            QToolBar QToolButton {
+                min-width: 120px;
+                padding: 7px 12px;
             }
             QLineEdit, QPlainTextEdit, QComboBox {
                 background: #16181b;

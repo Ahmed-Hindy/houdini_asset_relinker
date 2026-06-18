@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum
+from typing import Optional
 
 
-class ReferenceKind(StrEnum):
+class ReferenceKind(str, Enum):
     """Known reference categories."""
 
     FILE_PARAMETER = "file_parameter"
@@ -33,8 +34,8 @@ class AssetReference:
     raw_path: str
     expanded_path: str
     exists: bool
-    parm_path: str | None = None
-    node_path: str | None = None
+    parm_path: Optional[str] = None
+    node_path: Optional[str] = None
     can_update: bool = False
     reason: str = ""
 
@@ -59,7 +60,7 @@ class UpdateResult:
     status: str
     old_path: str
     new_path: str
-    parm_path: str | None = None
+    parm_path: Optional[str] = None
     message: str = ""
 
     @property

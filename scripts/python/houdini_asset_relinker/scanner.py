@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
 from houdini_asset_relinker.path_utils import path_exists
@@ -114,7 +116,7 @@ def _expand_string(path_value: str) -> str:
         return path_value
 
 
-def _safe_parm_path(parm: object | None) -> str | None:
+def _safe_parm_path(parm: Optional[object]) -> Optional[str]:
     """Return the full parameter path when available."""
     if parm is None:
         return None
@@ -124,7 +126,7 @@ def _safe_parm_path(parm: object | None) -> str | None:
         return None
 
 
-def _safe_node_path(parm: object | None) -> str | None:
+def _safe_node_path(parm: Optional[object]) -> Optional[str]:
     """Return the owning node path when available."""
     if parm is None:
         return None
@@ -134,7 +136,7 @@ def _safe_node_path(parm: object | None) -> str | None:
         return None
 
 
-def _can_update_parm(parm: object | None) -> tuple[bool, str]:
+def _can_update_parm(parm: Optional[object]) -> tuple[bool, str]:
     """Return whether a Houdini parm looks directly writable."""
     if parm is None:
         return False, "Reference is not stored on a parameter"

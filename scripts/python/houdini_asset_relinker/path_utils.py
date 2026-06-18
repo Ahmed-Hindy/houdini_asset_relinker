@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 _FRAME_TOKEN_PATTERN = re.compile(r"(\$F\d*|%0?\d*d|#+|<UDIM>|<UVTILE>)", re.IGNORECASE)
 
@@ -40,7 +41,7 @@ def path_exists(expanded_path: str) -> bool:
 
 def replace_text(
     path_value: str, find_text: str, replace_with: str, case_sensitive: bool = True
-) -> str | None:
+) -> Optional[str]:
     """Replace text in a path and return None when there is no match."""
     if not find_text:
         return None
@@ -54,7 +55,7 @@ def replace_text(
     return pattern.sub(lambda _match: replace_with, path_value)
 
 
-def replace_root(path_value: str, old_root: str, new_root: str) -> str | None:
+def replace_root(path_value: str, old_root: str, new_root: str) -> Optional[str]:
     """Replace a path root while preserving the suffix after the root.
 
     Args:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
@@ -14,7 +15,7 @@ def replace_path_text(
     find_text: str,
     replace_with: str,
     dry_run: bool = True,
-    references: Iterable[AssetReference] | None = None,
+    references: Optional[Iterable[AssetReference]] = None,
     case_sensitive: bool = True,
 ) -> UpdateReport:
     """Replace text in all writable file parameter paths.
@@ -47,7 +48,7 @@ def replace_path_root(
     old_root: str,
     new_root: str,
     dry_run: bool = True,
-    references: Iterable[AssetReference] | None = None,
+    references: Optional[Iterable[AssetReference]] = None,
 ) -> UpdateReport:
     """Replace a root path in all writable file parameter paths.
 

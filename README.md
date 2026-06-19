@@ -9,6 +9,7 @@ A friendly Python tool for auditing, finding, and replacing external asset paths
 ## What It Does
 
 When working on large Houdini scenes, asset paths can easily break when projects move or local drive letters change. This tool helps you:
+
 - **Scan** the entire scene to list all external file paths.
 - **Identify** broken paths (marked in red as `Missing`).
 - **Search & Filter** to find specific nodes or parameters.
@@ -20,6 +21,7 @@ When working on large Houdini scenes, asset paths can easily break when projects
 ## How to Open the Tool
 
 Once installed by your pipeline TD, you will find the tool on your Houdini shelf:
+
 1. Open your Houdini Shelf set.
 2. Click the **Asset Relinker** shelf tool.
 3. This opens a floating window where you can run scans and perform operations.
@@ -31,6 +33,7 @@ Once installed by your pipeline TD, you will find the tool on your Houdini shelf
 ## How to Use (Step-by-Step)
 
 ### Step 1: Scan Your Scene
+
 1. Click **Scan Scene** at the top right to analyze the current session.
 2. Under **Project var**, specify your main project directory variable (e.g., `HIP` or `JOB`).
 3. You can customize the scan with these options:
@@ -39,7 +42,9 @@ Once installed by your pipeline TD, you will find the tool on your Houdini shelf
    - **Locked-node contents**: Scan parameters inside locked HDAs.
 
 ### Step 2: Inspect and Filter
+
 Once scanned, you will see a list of references with statuses:
+
 - 🟢 **Ready**: The file exists and is located at the correct path.
 - 🔴 **Missing**: The file cannot be found on disk.
 - 🟡 **Undefined variable**: The path contains an environment variable that is not set in the current session.
@@ -47,7 +52,9 @@ Once scanned, you will see a list of references with statuses:
 Use the search bar at the top to filter paths by node names, parameters, or path text. Check **Missing only** to focus purely on broken assets.
 
 ### Step 3: Find & Replace Paths
+
 To update multiple paths at once:
+
 1. Go to the **Relink** tab on the right side.
 2. In the **Find** field, enter the old path prefix (e.g., `P:/old_show` or `D:/temp`).
 3. In the **Replace with** field, enter the new path (e.g., `P:/new_show` or `$HIP/assets`).

@@ -39,13 +39,13 @@ To set up the tool in Houdini:
 2. **Copy Package JSON**:
    Copy the file:
    `C:/Users/$USERNAME/Documents/houdiniTools/houdini_asset_relinker/package/houdini_asset_relinker.json`
-   
+
    to your local Houdini packages directory:
    `C:/Users/$USERNAME/Documents/houdini21.0/packages/houdini_asset_relinker.json`
 
 3. **Verify/Update Root Path**:
    Ensure the `"ASSET_RELINKER_ROOT"` environment variable in the package JSON points to the absolute path of your workspace root:
-   
+
    ```json
    {
      "load_package_once": true,
@@ -75,10 +75,12 @@ To verify that the module loaded correctly, run this in Houdini's Python Shell:
 import houdini_asset_relinker
 print(houdini_asset_relinker.__file__)
 ```
+
 Expected output:
 `C:/Users/$USERNAME/Documents/houdiniTools/houdini_asset_relinker/scripts/python/houdini_asset_relinker/__init__.py`
 
 To open the dialog programmatically:
+
 ```python
 from houdini_asset_relinker.ui import open_dialog
 open_dialog()

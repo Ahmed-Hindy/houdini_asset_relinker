@@ -175,6 +175,7 @@ def test_scan_file_references_expands_and_reports_writable_parms(
     assert reference.node_path == "/obj/geo1"
     assert reference.node_type == "filecache"
     assert reference.missing_variables == ()
+    assert reference.sequence_pattern == ""
 
 
 def test_scan_file_references_marks_locked_parms_as_not_updatable(
@@ -303,3 +304,48 @@ def test_scan_file_references_reports_missing_raw_path_variables(
     references = scan_file_references()
 
     assert references[0].missing_variables == ("MISSING",)
+    assert references[0].sequence_pattern == "$MISSING/cache/sim.*.bgeo.sc"
+    assert not references[0].exists
+
+
+def test_scan_file_references_checks_preserved_frame_pattern(monkeypatch, tmp_path: Path) -> None:
+    """It checks sequence siblings when Houdini expands $F4 to the current frame."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "sim.1051.bgeo.sc").write_text("test")
+    parm = FakeParm("/obj/geo1/filecache1/sopoutput", "$HIP/cache/sim.$F4.bgeo.sc")
+    root = FakeRootNode([(parm, "$HIP/cache/sim.$F4.bgeo.sc")])
+    fake_hou = SimpleNamespace(
+        node=lambda path: root if path == "/" else None,
+        expandString=lambda value: value.replace("$HIP", str(tmp_path)).replace("$F4", "1052"),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    references = scan_file_references()
+
+    reference = references[0]
+    assert Path(reference.expanded_path) == cache_dir / "sim.1052.bgeo.sc"
+    assert reference.exists
+    assert reference.sequence_pattern.replace("\\", "/") == str(
+        cache_dir / "sim.*.bgeo.sc"
+    ).replace("\\", "/")
+
+
+def test_scan_file_references_does_not_infer_sequence_from_expanded_number(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """It does not invent a sequence pattern from a numeric filename."""
+    parm = FakeParm("/obj/geo1/filecache1/sopoutput", "$HIP/cache/sim.1052.bgeo.sc")
+    root = FakeRootNode([(parm, "$HIP/cache/sim.1052.bgeo.sc")])
+    fake_hou = SimpleNamespace(
+        node=lambda path: root if path == "/" else None,
+        expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    references = scan_file_references()
+
+    assert not references[0].exists
+    assert references[0].sequence_pattern == ""

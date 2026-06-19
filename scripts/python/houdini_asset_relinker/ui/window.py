@@ -263,11 +263,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reveal_action = ACTION_CLASS("Reveal on Disk", self)
         self.reveal_action.setToolTip("Open the selected reference's folder in Explorer.")
         self.reveal_action.setStatusTip("Open the selected reference's folder in Explorer.")
-        self.select_node_action = ACTION_CLASS("Select Node", self)
-        self.select_node_action.setToolTip(
+        self.jump_to_node_action = ACTION_CLASS("Jump to Node", self)
+        self.jump_to_node_action.setToolTip(
             "Jump the Network Editor to the selected reference's node and select it."
         )
-        self.select_node_action.setStatusTip(
+        self.jump_to_node_action.setStatusTip(
             "Jump the Network Editor to the selected reference's node and select it."
         )
 
@@ -401,13 +401,14 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.verticalHeader().setVisible(False)
         self.reference_table.horizontalHeader().setStretchLastSection(True)
         self.reference_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
-        self.reference_table.setColumnWidth(0, 65)
+        self.reference_table.setColumnWidth(0, 120)
         self.reference_table.setColumnWidth(1, 65)
         self.reference_table.setColumnWidth(2, 190)
         self.reference_table.setColumnWidth(3, 100)
         self.reference_table.setColumnWidth(4, 220)
         self.reference_table.setColumnWidth(5, 300)
         self.reference_table.setColumnWidth(6, 300)
+        self.reference_table.setColumnWidth(8, 600)
         self.reference_table.setToolTip(
             "Right-click a reference to copy its path, reveal it on disk, or select its node."
         )
@@ -498,7 +499,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _connect_signals(self) -> None:
         self.copy_path_action.triggered.connect(self.copy_selected_reference_path)
         self.reveal_action.triggered.connect(self.reveal_selected_reference)
-        self.select_node_action.triggered.connect(self.select_selected_node)
+        self.jump_to_node_action.triggered.connect(self.select_selected_node)
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
         self.reset_filters_button.clicked.connect(self._reset_reference_filters)
@@ -554,24 +555,29 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         if reference is None:
             self.detail_text.clear()
             return
-        self.detail_text.setPlainText(
-            "\n".join(
-                [
-                    f"Kind: {reference.kind.value}",
-                    f"Status: {'exists' if reference.exists else 'missing'}",
-                    f"Writable: {'yes' if reference.can_update else 'no'}",
-                    f"Node: {reference.node_path or ''}",
-                    f"Parameter: {reference.parm_path or ''}",
-                    f"Path family: {reference.path_family}",
-                    "",
-                    f"Raw path:\n{reference.raw_path}",
-                    "",
-                    f"Expanded path:\n{reference.expanded_path}",
-                    "",
-                    f"Note:\n{reference.reason or ''}",
-                ]
-            )
+        lines = [
+            f"Kind: {reference.kind.value}",
+            f"Status: {_reference_status_text(reference)}",
+            f"Writable: {'yes' if reference.can_update else 'no'}",
+            f"Node: {reference.node_path or ''}",
+            f"Parameter: {reference.parm_path or ''}",
+            f"Path family: {reference.path_family}",
+        ]
+        if reference.missing_variables:
+            lines.append(f"Undefined variables: {', '.join(reference.missing_variables)}")
+        if reference.sequence_pattern:
+            lines.append(f"Sequence pattern: {reference.sequence_pattern}")
+        lines.extend(
+            [
+                "",
+                f"Raw path:\n{reference.raw_path}",
+                "",
+                f"Expanded path:\n{reference.expanded_path}",
+                "",
+                f"Note:\n{_reference_note_text(reference)}",
+            ]
         )
+        self.detail_text.setPlainText("\n".join(lines))
 
     def _selected_reference(self) -> Optional[AssetReference]:
         selection = self.reference_table.selectionModel()
@@ -591,7 +597,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         if clicked_index.isValid():
             self.reference_table.selectRow(clicked_index.row())
         menu = QtWidgets.QMenu(self)
-        menu.addAction(self.select_node_action)
+        menu.addAction(self.jump_to_node_action)
         menu.addAction(self.copy_path_action)
         menu.addAction(self.reveal_action)
         _exec_dialog(menu, self.reference_table.viewport().mapToGlobal(position))
@@ -599,11 +605,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _update_summary(self, *_args: object) -> None:
         references = self._reference_model.references()
         missing_count = sum(not reference.exists for reference in references)
+        undefined_count = sum(bool(reference.missing_variables) for reference in references)
         writable_count = sum(reference.can_update for reference in references)
         hda_count = sum(reference.kind == ReferenceKind.HDA_LIBRARY for reference in references)
         self.summary_label.setText(
             f"{len(references)} total | {missing_count} missing | "
-            f"{writable_count} writable | {hda_count} HDA | "
+            f"{undefined_count} undefined vars | {writable_count} writable | {hda_count} HDA | "
             f"{self._proxy_model.rowCount()} visible"
         )
         self.export_button.setEnabled(bool(references))
@@ -736,6 +743,24 @@ def _exec_dialog(target: object, *args: object) -> int:
     if exec_method is None:
         return 0
     return exec_method(*args)
+
+
+def _reference_status_text(reference: AssetReference) -> str:
+    """Return the selected-reference status text."""
+    if reference.missing_variables:
+        return "undefined variable"
+    if not reference.exists:
+        return "missing"
+    if not reference.can_update:
+        return "read only"
+    return "ready"
+
+
+def _reference_note_text(reference: AssetReference) -> str:
+    """Return the selected-reference note text."""
+    if reference.missing_variables:
+        return f"Undefined variables: {', '.join(reference.missing_variables)}"
+    return reference.reason or ""
 
 
 if __name__ == "__main__":

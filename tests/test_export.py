@@ -17,6 +17,7 @@ def test_write_references_csv_includes_triage_columns(tmp_path) -> None:
                 raw_path="$ASSET_ROOT/cache/sim.$F4.bgeo.sc",
                 expanded_path="$ASSET_ROOT/cache/sim.$F4.bgeo.sc",
                 exists=False,
+                sequence_pattern="$ASSET_ROOT/cache/sim.*.bgeo.sc",
                 path_family="$ASSET_ROOT",
                 parm_path="/obj/geo1/filecache1/sopoutput",
                 parm_name="sopoutput",
@@ -37,7 +38,7 @@ def test_write_references_csv_includes_triage_columns(tmp_path) -> None:
     assert row["parm_name"] == "sopoutput"
     assert row["parm_label"] == "Geometry File"
     assert row["path_role"] == "cache"
-    assert row["diagnosis"] == "missing_variables"
+    assert row["diagnosis"] == "undefined_variable"
     assert row["missing_variables"] == "ASSET_ROOT"
     assert row["root"] == "$ASSET_ROOT"
     assert row["extension"] == ".bgeo.sc"

@@ -7,6 +7,7 @@ from typing import Optional
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
 from houdini_asset_relinker.path_utils import (
+    build_sequence_pattern,
     missing_variables,
     normalize_for_compare,
     path_exists,
@@ -86,7 +87,7 @@ def scan_file_references(
 def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
     """Build an asset reference from a Houdini parameter and path."""
     raw_path = _raw_path_from_parm(parm, path_value)
-    expanded_path = _expand_string(raw_path)
+    expanded_path, missing_variable_names, sequence_path_pattern, exists = _analyze_path(raw_path)
     parm_path = _safe_parm_path(parm)
     node_path = _safe_node_path(parm)
     node_type = _safe_node_type(parm)
@@ -97,14 +98,15 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
         kind=ReferenceKind.FILE_PARAMETER,
         raw_path=raw_path,
         expanded_path=expanded_path,
-        exists=path_exists(expanded_path),
+        exists=exists,
+        sequence_pattern=sequence_path_pattern,
         path_family=path_family(raw_path),
         parm_path=parm_path,
         parm_name=parm_name,
         parm_label=parm_label,
         node_path=node_path,
         node_type=node_type,
-        missing_variables=_missing_variables(raw_path),
+        missing_variables=missing_variable_names,
         can_update=can_update,
         reason=reason,
     )
@@ -119,7 +121,9 @@ def scan_hda_libraries() -> list[AssetReference]:
     hou = get_hou()
     references = []
     for raw_path in hou.hda.loadedFiles():
-        expanded_path = _expand_string(raw_path)
+        expanded_path, missing_variable_names, sequence_path_pattern, exists = _analyze_path(
+            raw_path
+        )
         can_update = raw_path != "Embedded"
         reason = (
             "Embedded asset definition" if raw_path == "Embedded" else "Use HDA replacement API"
@@ -129,10 +133,11 @@ def scan_hda_libraries() -> list[AssetReference]:
                 kind=ReferenceKind.HDA_LIBRARY,
                 raw_path=raw_path,
                 expanded_path=expanded_path,
-                exists=path_exists(expanded_path) if raw_path != "Embedded" else True,
+                exists=exists if raw_path != "Embedded" else True,
+                sequence_pattern=sequence_path_pattern,
                 path_family=path_family(raw_path) if raw_path != "Embedded" else "Embedded",
                 path_role="hda_library",
-                missing_variables=_missing_variables(raw_path) if raw_path != "Embedded" else (),
+                missing_variables=missing_variable_names if raw_path != "Embedded" else (),
                 can_update=can_update,
                 reason=reason,
             )
@@ -157,6 +162,17 @@ def _expand_string(path_value: str) -> str:
         return hou.expandString(path_value)
     except Exception:
         return path_value
+
+
+def _analyze_path(raw_path: str) -> tuple[str, tuple[str, ...], str, bool]:
+    """Return expanded path details used by scanner rows."""
+    missing_variable_names = _missing_variables(raw_path)
+    expanded_path = _expand_string(raw_path)
+    sequence_path_pattern = build_sequence_pattern(raw_path, _expand_string)
+    exists = False
+    if not missing_variable_names:
+        exists = path_exists(expanded_path, sequence_path_pattern)
+    return expanded_path, missing_variable_names, sequence_path_pattern, exists
 
 
 def _safe_parm_path(parm: Optional[object]) -> Optional[str]:

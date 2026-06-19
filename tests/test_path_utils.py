@@ -3,11 +3,14 @@
 from pathlib import Path
 
 from houdini_asset_relinker.path_utils import (
+    build_sequence_pattern,
     contains_sequence_token,
+    missing_variables,
     path_exists,
     path_family,
     replace_root,
     replace_text,
+    sequence_pattern,
 )
 
 
@@ -37,10 +40,35 @@ def test_replace_root_accepts_windows_separator_variants() -> None:
 
 
 def test_contains_sequence_token() -> None:
-    """It recognizes common Houdini and renderer sequence tokens."""
+    """It recognizes Houdini sequence tokens only."""
     assert contains_sequence_token("$HIP/cache/sim.$F4.bgeo.sc")
+    assert contains_sequence_token("$HIP/cache/sim.$F.bgeo.sc")
     assert contains_sequence_token("$HIP/tex/char.<UDIM>.exr")
-    assert contains_sequence_token("$HIP/render/image.%04d.exr")
+    assert not contains_sequence_token("$HIP/cache/sim.####.bgeo.sc")
+    assert not contains_sequence_token("$HIP/render/image.%04d.exr")
+    assert not contains_sequence_token("$HIP/tex/char.<UVTILE>.exr")
+
+
+def test_missing_variables_excludes_frame_tokens_and_dedupes() -> None:
+    """It reports unresolved Houdini variables without treating frames as variables."""
+    missing = missing_variables(
+        "$AYON_ROOT/${ASSET_ROOT}/cache/$AYON_ROOT/sim.$F4.bgeo.sc",
+        lambda name: "G:/show" if name == "HIP" else None,
+    )
+
+    assert missing == ("AYON_ROOT", "ASSET_ROOT")
+
+
+def test_build_sequence_pattern_preserves_tokens_through_expansion(tmp_path: Path) -> None:
+    """It expands variables without losing Houdini sequence tokens."""
+    pattern = build_sequence_pattern(
+        "$HIP/cache/sim.$F4.bgeo.sc",
+        lambda value: value.replace("$HIP", str(tmp_path)).replace("$F4", "1052"),
+    )
+
+    assert pattern.replace("\\", "/") == str(tmp_path / "cache" / "sim.*.bgeo.sc").replace(
+        "\\", "/"
+    )
 
 
 def test_path_exists_accepts_absolute_sequence_patterns(tmp_path: Path) -> None:
@@ -51,6 +79,14 @@ def test_path_exists_accepts_absolute_sequence_patterns(tmp_path: Path) -> None:
     assert path_exists(str(tmp_path / "sim.$F4.bgeo.sc"))
 
 
+def test_path_exists_checks_preserved_sequence_pattern_after_exact_path(tmp_path: Path) -> None:
+    """It accepts a sequence when the current expanded frame is missing."""
+    cache_file = tmp_path / "sim.1051.bgeo.sc"
+    cache_file.write_text("test")
+
+    assert path_exists(str(tmp_path / "sim.1052.bgeo.sc"), str(tmp_path / "sim.*.bgeo.sc"))
+
+
 def test_path_exists_accepts_absolute_udim_patterns(tmp_path: Path) -> None:
     """It checks absolute UDIM paths without passing them to pathlib glob."""
     texture_file = tmp_path / "char.1001.exr"
@@ -59,9 +95,24 @@ def test_path_exists_accepts_absolute_udim_patterns(tmp_path: Path) -> None:
     assert path_exists(str(tmp_path / "char.<UDIM>.exr"))
 
 
+def test_path_exists_ignores_hash_padding_patterns(tmp_path: Path) -> None:
+    """It does not treat hash padding as a Houdini sequence pattern."""
+    cache_file = tmp_path / "sim.0001.bgeo.sc"
+    cache_file.write_text("test")
+
+    assert not path_exists(str(tmp_path / "sim.####.bgeo.sc"))
+
+
 def test_path_exists_returns_false_for_missing_sequence(tmp_path: Path) -> None:
     """It returns false when no files match a sequence pattern."""
     assert not path_exists(str(tmp_path / "missing.$F4.bgeo.sc"))
+
+
+def test_sequence_pattern_ignores_non_houdini_tokens() -> None:
+    """It does not treat non-Houdini patterns as Houdini sequences."""
+    assert sequence_pattern("$HIP/cache/sim.####.bgeo.sc") == ""
+    assert sequence_pattern("$HIP/render/image.%04d.exr") == ""
+    assert sequence_pattern("$HIP/tex/char.<UVTILE>.exr") == ""
 
 
 def test_path_family_groups_windows_paths_by_root_family() -> None:

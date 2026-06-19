@@ -6,7 +6,12 @@ from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
-from houdini_asset_relinker.path_utils import normalize_for_compare, path_exists, path_family
+from houdini_asset_relinker.path_utils import (
+    missing_variables,
+    normalize_for_compare,
+    path_exists,
+    path_family,
+)
 
 
 def scan_assets(
@@ -78,6 +83,9 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
     expanded_path = _expand_string(raw_path)
     parm_path = _safe_parm_path(parm)
     node_path = _safe_node_path(parm)
+    node_type = _safe_node_type(parm)
+    parm_name = _safe_parm_name(parm, parm_path)
+    parm_label = _safe_parm_label(parm)
     can_update, reason = _can_update_parm(parm)
     return AssetReference(
         kind=ReferenceKind.FILE_PARAMETER,
@@ -86,7 +94,11 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
         exists=path_exists(expanded_path),
         path_family=path_family(expanded_path),
         parm_path=parm_path,
+        parm_name=parm_name,
+        parm_label=parm_label,
         node_path=node_path,
+        node_type=node_type,
+        missing_variables=_missing_variables(raw_path),
         can_update=can_update,
         reason=reason,
     )
@@ -113,6 +125,8 @@ def scan_hda_libraries() -> list[AssetReference]:
                 expanded_path=expanded_path,
                 exists=path_exists(expanded_path) if raw_path != "Embedded" else True,
                 path_family=path_family(expanded_path) if raw_path != "Embedded" else "Embedded",
+                path_role="hda_library",
+                missing_variables=_missing_variables(raw_path) if raw_path != "Embedded" else (),
                 can_update=can_update,
                 reason=reason,
             )
@@ -157,6 +171,44 @@ def _safe_node_path(parm: Optional[object]) -> Optional[str]:
         return parm.node().path()
     except Exception:
         return None
+
+
+def _safe_node_type(parm: Optional[object]) -> str:
+    """Return the owning node type name when available."""
+    if parm is None:
+        return ""
+    try:
+        return str(parm.node().type().name())
+    except Exception:
+        return ""
+
+
+def _safe_parm_name(parm: Optional[object], parm_path: Optional[str]) -> str:
+    """Return the parameter token name when available."""
+    if parm is not None:
+        try:
+            return str(parm.name())
+        except Exception:
+            pass
+    if parm_path:
+        return parm_path.rsplit("/", 1)[-1]
+    return ""
+
+
+def _safe_parm_label(parm: Optional[object]) -> str:
+    """Return the parameter label when available."""
+    if parm is None:
+        return ""
+    try:
+        return str(parm.description())
+    except Exception:
+        return ""
+
+
+def _missing_variables(raw_path: str) -> tuple[str, ...]:
+    """Return unresolved variables in a raw Houdini path."""
+    hou = get_hou()
+    return missing_variables(raw_path, getattr(hou, "getenv", None))
 
 
 def _can_update_parm(parm: Optional[object]) -> tuple[bool, str]:

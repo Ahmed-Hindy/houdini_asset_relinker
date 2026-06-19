@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from houdini_asset_relinker.path_utils import path_extension, path_root, sequence_pattern
+
 
 class ReferenceKind(str, Enum):
     """Known reference categories."""
@@ -26,7 +28,12 @@ class AssetReference:
         exists: Whether the expanded path exists on disk.
         path_family: Compact root/path-family label for grouping related references.
         parm_path: Full Houdini parameter path when the reference is stored on a parameter.
+        parm_name: Houdini parameter token/name when available.
+        parm_label: Houdini parameter label when available.
         node_path: Full Houdini node path owning the parameter.
+        node_type: Houdini node type name when available.
+        path_role: Triage role inferred from the parameter/path context.
+        missing_variables: Houdini variables in the raw path that did not resolve.
         can_update: Whether the tool can update this reference directly.
         reason: Human-readable reason when the reference cannot be directly updated.
     """
@@ -37,22 +44,38 @@ class AssetReference:
     exists: bool
     path_family: str = ""
     parm_path: Optional[str] = None
+    parm_name: str = ""
+    parm_label: str = ""
     node_path: Optional[str] = None
+    node_type: str = ""
+    path_role: str = ""
+    missing_variables: tuple[str, ...] = ()
     can_update: bool = False
     reason: str = ""
 
     def to_row(self) -> dict[str, object]:
         """Return a serializable row for CSV, JSON, or table display."""
+        path_role = self.path_role or _infer_path_role(self)
         return {
             "kind": self.kind.value,
             "node_path": self.node_path or "",
+            "node_type": self.node_type,
             "parm_path": self.parm_path or "",
+            "parm_name": self.parm_name,
+            "parm_label": self.parm_label,
+            "path_role": path_role,
             "raw_path": self.raw_path,
             "expanded_path": self.expanded_path,
+            "root": path_root(self.expanded_path or self.raw_path),
+            "extension": path_extension(self.expanded_path or self.raw_path),
+            "sequence_pattern": sequence_pattern(self.expanded_path or self.raw_path),
             "exists": self.exists,
             "path_family": self.path_family,
             "can_update": self.can_update,
+            "diagnosis": _diagnosis(self),
+            "missing_variables": ";".join(self.missing_variables),
             "reason": self.reason,
+            "suggested_action": _suggested_action(self, path_role),
         }
 
 
@@ -127,3 +150,62 @@ class UpdateReport:
 def rows_from_references(references: Iterable[AssetReference]) -> list[dict[str, object]]:
     """Convert references to serializable table rows."""
     return [reference.to_row() for reference in references]
+
+
+def _diagnosis(reference: AssetReference) -> str:
+    """Return a compact triage diagnosis for a reference."""
+    if reference.missing_variables:
+        return "missing_variables"
+    if reference.kind == ReferenceKind.HDA_LIBRARY and reference.raw_path == "Embedded":
+        return "embedded_hda"
+    if not reference.exists:
+        return "missing_path"
+    if not reference.can_update:
+        return "read_only"
+    return "ready"
+
+
+def _suggested_action(reference: AssetReference, path_role: str) -> str:
+    """Return a short next-step suggestion for CSV triage."""
+    if reference.missing_variables:
+        return "Define missing variables or replace the unresolved path root."
+    if reference.kind == ReferenceKind.HDA_LIBRARY and reference.raw_path == "Embedded":
+        return "Leave embedded definition as-is or manage it in the HDA manager."
+    if not reference.exists and reference.can_update:
+        return "Relink to an existing asset path."
+    if not reference.exists:
+        return "Fix the source manually before relinking."
+    if reference.kind == ReferenceKind.HDA_LIBRARY:
+        return "Use the HDA replacement workflow if this library should move."
+    if not reference.can_update:
+        return "Review manually; this reference is not directly writable."
+    if path_role in {"output", "render_output", "cache"}:
+        return "Verify whether the path should be regenerated or relinked."
+    return "No action needed."
+
+
+def _infer_path_role(reference: AssetReference) -> str:
+    """Infer the practical role of a path from Houdini parm metadata and file path."""
+    if reference.kind == ReferenceKind.HDA_LIBRARY:
+        return "hda_library"
+
+    context = " ".join(
+        [
+            reference.parm_name,
+            reference.parm_label,
+            reference.parm_path or "",
+            reference.raw_path,
+            reference.expanded_path,
+        ]
+    ).casefold()
+    role_markers = (
+        ("render_output", ("vm_picture", "picture", "render", "/render/", "/renders/")),
+        ("cache", ("cache", ".bgeo", ".sim", ".vdb", ".abc")),
+        ("output", ("output", "sopoutput", "ropoutput", "export", "write")),
+        ("texture", ("texture", "tex", "map", ".exr", ".tif", ".tiff", ".jpg", ".png")),
+        ("input", ("input", "source", "read", "file", "filename", "import")),
+    )
+    for role, markers in role_markers:
+        if any(marker in context for marker in markers):
+            return role
+    return "unknown"

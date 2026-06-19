@@ -11,13 +11,23 @@ from houdini_asset_relinker.models import AssetReference
 _FIELDNAMES = [
     "kind",
     "node_path",
+    "node_type",
     "parm_path",
+    "parm_name",
+    "parm_label",
+    "path_role",
     "raw_path",
     "expanded_path",
+    "root",
+    "extension",
+    "sequence_pattern",
     "path_family",
     "exists",
     "can_update",
+    "diagnosis",
+    "missing_variables",
     "reason",
+    "suggested_action",
 ]
 
 

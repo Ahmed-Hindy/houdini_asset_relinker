@@ -14,21 +14,35 @@ from houdini_asset_relinker.scanner import scan_assets, scan_file_references
 class FakeNode:
     """Minimal stand-in for a Houdini node."""
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, type_name: str = "filecache") -> None:
         self._path = path
+        self._type_name = type_name
 
     def path(self) -> str:
         """Return the fake node path."""
         return self._path
 
+    def type(self):
+        """Return a fake Houdini node type."""
+        return SimpleNamespace(name=lambda: self._type_name)
+
 
 class FakeParm:
     """Minimal stand-in for a Houdini parameter."""
 
-    def __init__(self, path: str, raw_value: str, locked: bool = False) -> None:
+    def __init__(
+        self,
+        path: str,
+        raw_value: str,
+        locked: bool = False,
+        label: str = "Geometry File",
+        node_type: str = "filecache",
+    ) -> None:
         self._path = path
         self._raw_value = raw_value
         self._locked = locked
+        self._label = label
+        self._node_type = node_type
 
     def unexpandedString(self) -> str:
         """Return the raw parameter value."""
@@ -38,9 +52,17 @@ class FakeParm:
         """Return the fake parameter path."""
         return self._path
 
+    def name(self) -> str:
+        """Return the fake parameter name."""
+        return self._path.rsplit("/", 1)[-1]
+
+    def description(self) -> str:
+        """Return the fake parameter label."""
+        return self._label
+
     def node(self) -> FakeNode:
         """Return the owning fake node."""
-        return FakeNode("/obj/geo1")
+        return FakeNode("/obj/geo1", self._node_type)
 
     def isLocked(self) -> bool:
         """Return whether the fake parameter is locked."""
@@ -83,6 +105,7 @@ def test_scan_file_references_expands_and_reports_writable_parms(
     fake_hou = SimpleNamespace(
         node=lambda path: root if path == "/" else None,
         expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
     )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
@@ -97,7 +120,11 @@ def test_scan_file_references_expands_and_reports_writable_parms(
     assert reference.path_family == path_family(str(texture_path))
     assert reference.can_update
     assert reference.parm_path == "/obj/geo1/file1/file"
+    assert reference.parm_name == "file"
+    assert reference.parm_label == "Geometry File"
     assert reference.node_path == "/obj/geo1"
+    assert reference.node_type == "filecache"
+    assert reference.missing_variables == ()
 
 
 def test_scan_file_references_marks_locked_parms_as_not_updatable(
@@ -109,6 +136,7 @@ def test_scan_file_references_marks_locked_parms_as_not_updatable(
     fake_hou = SimpleNamespace(
         node=lambda path: root if path == "/" else None,
         expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
     )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
@@ -131,6 +159,7 @@ def test_scan_assets_can_include_hda_libraries(monkeypatch, tmp_path: Path) -> N
         node=lambda path: root if path == "/" else None,
         expandString=lambda value: value.replace("$HIP", str(tmp_path)),
         hda=SimpleNamespace(loadedFiles=lambda: [str(hda_path), str(extra_hda_path)]),
+        getenv=lambda _name: None,
     )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
@@ -148,6 +177,7 @@ def test_scan_file_references_can_recurse_into_locked_nodes(monkeypatch, tmp_pat
     fake_hou = SimpleNamespace(
         node=lambda path: root if path == "/" else None,
         expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
     )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
@@ -158,3 +188,21 @@ def test_scan_file_references_can_recurse_into_locked_nodes(monkeypatch, tmp_pat
         "$HIP/root.exr",
         "$HIP/locked.exr",
     ]
+
+
+def test_scan_file_references_reports_missing_raw_path_variables(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """It reports unresolved Houdini variables without treating frame tokens as variables."""
+    parm = FakeParm("/obj/geo1/file1/file", "$MISSING/cache/sim.$F4.bgeo.sc")
+    root = FakeRootNode([(parm, "$MISSING/cache/sim.$F4.bgeo.sc")])
+    fake_hou = SimpleNamespace(
+        node=lambda path: root if path == "/" else None,
+        expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    references = scan_file_references()
+
+    assert references[0].missing_variables == ("MISSING",)

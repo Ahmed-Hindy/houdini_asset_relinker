@@ -6,9 +6,12 @@ import os
 import re
 from glob import glob
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 _FRAME_TOKEN_PATTERN = re.compile(r"(\$F\d*|%0?\d*d|#+|<UDIM>|<UVTILE>)", re.IGNORECASE)
+_HOUDINI_VARIABLE_PATTERN = re.compile(
+    r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))"
+)
 _WINDOWS_DRIVE_PATTERN = re.compile(r"^([A-Za-z]:)(?:/(.*))?$")
 _URI_SCHEME_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 
@@ -38,6 +41,81 @@ def path_exists(expanded_path: str) -> bool:
         glob_pattern = _FRAME_TOKEN_PATTERN.sub("*", expanded_path)
         return bool(glob(glob_pattern))
     return Path(expanded_path).exists()
+
+
+def missing_variables(
+    path_value: str, variable_lookup: Optional[Callable[[str], Optional[str]]] = None
+) -> tuple[str, ...]:
+    """Return Houdini variable names that do not resolve through the provided lookup.
+
+    Args:
+        path_value: Raw path value to inspect.
+        variable_lookup: Optional function that returns a variable value by name.
+
+    Returns:
+        Missing variable names in first-seen order.
+    """
+    if variable_lookup is None:
+        return ()
+    missing = []
+    seen = set()
+    for match in _HOUDINI_VARIABLE_PATTERN.finditer(path_value):
+        if _FRAME_TOKEN_PATTERN.fullmatch(match.group(0)):
+            continue
+        variable_name = match.group(1) or match.group(2)
+        if variable_name in seen:
+            continue
+        try:
+            variable_value = variable_lookup(variable_name)
+        except Exception:
+            variable_value = None
+        if not variable_value:
+            missing.append(variable_name)
+            seen.add(variable_name)
+    return tuple(missing)
+
+
+def path_root(path_value: str) -> str:
+    """Return the drive, UNC share, URI scheme, or absolute root for a path."""
+    cleaned_path = path_value.strip().replace("\\", "/")
+    if not cleaned_path:
+        return ""
+
+    if cleaned_path.startswith("//"):
+        parts = _path_parts(cleaned_path)
+        if len(parts) >= 2:
+            return "//" + "/".join(parts[:2])
+        return cleaned_path.rstrip("/")
+
+    drive_match = _WINDOWS_DRIVE_PATTERN.match(cleaned_path)
+    if drive_match:
+        return drive_match.group(1)
+
+    uri_match = _URI_SCHEME_PATTERN.match(cleaned_path)
+    if uri_match:
+        return f"{uri_match.group(1)}:"
+
+    if cleaned_path.startswith("/"):
+        return "/"
+
+    parts = _path_parts(cleaned_path)
+    return parts[0] if parts else ""
+
+
+def path_extension(path_value: str) -> str:
+    """Return the full file extension, preserving compound extensions."""
+    file_name = path_value.strip().replace("\\", "/").rsplit("/", 1)[-1]
+    if not file_name:
+        return ""
+    file_name = _FRAME_TOKEN_PATTERN.sub("", file_name)
+    return "".join(suffix for suffix in Path(file_name).suffixes if suffix != ".")
+
+
+def sequence_pattern(path_value: str) -> str:
+    """Return a glob-like sequence pattern when the path has frame or tile tokens."""
+    if not contains_sequence_token(path_value):
+        return ""
+    return _FRAME_TOKEN_PATTERN.sub("*", path_value)
 
 
 def path_family(expanded_path: str, depth: int = PATH_FAMILY_DEPTH) -> str:

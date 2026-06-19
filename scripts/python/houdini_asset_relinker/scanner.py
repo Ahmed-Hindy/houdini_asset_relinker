@@ -14,8 +14,24 @@ from houdini_asset_relinker.path_utils import (
     path_family,
 )
 
-_IGNORED_FILE_REFERENCE_PARMS = {
-    "descriptivelabel",
+_IGNORED_FILE_REFERENCE_PARMS = {"descriptivelabel", "licensefile"}
+_OUTPUT_FILE_REFERENCE_PARMS = {  # Common output file parameters. Shouldn't be checked if missing .
+    "vm_picture",
+    "ar_picture",
+    "ar_ass_file",
+    "lopoutput",
+    "sopoutput",
+    "picture",
+    "productname",
+    "output",
+    "soho_diskfile",
+    "vm_tmpsharedstorage",
+    "vm_tmplocalstorage",
+    "exportpath",
+    "savetodirectory",
+    "ropoutput",
+    "copoutput",
+    "filename",
 }
 
 

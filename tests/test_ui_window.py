@@ -11,6 +11,7 @@ pytest.importorskip("PySide6")
 
 from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
 from houdini_asset_relinker.ui import window as window_module
+from houdini_asset_relinker.ui.qt_constants import TOOLTIP_ROLE
 from houdini_asset_relinker.ui.window import (
     REFERENCE_PATH_FAMILY_COLUMN,
     AssetRelinkerWindow,
@@ -39,6 +40,7 @@ def relinker_window(qt_app):
                 raw_path="P:/old_show/cache/a.bgeo.sc",
                 expanded_path="P:/old_show/cache/a.bgeo.sc",
                 exists=False,
+                sequence_pattern="",
                 parm_path="/obj/geo1/file1/file",
                 node_path="/obj/geo1",
                 can_update=True,
@@ -61,6 +63,7 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
                     raw_path="P:/show/cache/missing.bgeo.sc",
                     expanded_path="P:/show/cache/missing.bgeo.sc",
                     exists=False,
+                    sequence_pattern="",
                     parm_path="/obj/geo1/file1/file",
                     node_path="/obj/geo1",
                     can_update=True,
@@ -70,6 +73,7 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
                     raw_path="P:/show/cache/ready.bgeo.sc",
                     expanded_path="P:/show/cache/ready.bgeo.sc",
                     exists=True,
+                    sequence_pattern="",
                     parm_path="/obj/geo1/file2/file",
                     node_path="/obj/geo1",
                     can_update=True,
@@ -79,6 +83,7 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
                     raw_path="P:/show/cache/locked.bgeo.sc",
                     expanded_path="P:/show/cache/locked.bgeo.sc",
                     exists=False,
+                    sequence_pattern="",
                     parm_path="/obj/geo1/file3/file",
                     node_path="/obj/geo1",
                     can_update=False,
@@ -103,6 +108,45 @@ def test_reference_table_sorts_by_path_family_by_default(qt_app) -> None:
         assert relinker.reference_table.horizontalHeader().sortIndicatorSection() == (
             REFERENCE_PATH_FAMILY_COLUMN
         )
+    finally:
+        relinker.close()
+
+
+def test_reference_table_reports_undefined_variables(qt_app) -> None:
+    """It names undefined variables in table status, note, and details."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        relinker._reference_model.set_references(
+            [
+                AssetReference(
+                    kind=ReferenceKind.FILE_PARAMETER,
+                    raw_path="$AYON_CACHE/cache/sim.$F4.bgeo.sc",
+                    expanded_path="G:/projects/Data_folder/Houdini_Cache////geo/sim.1052.bgeo.sc",
+                    exists=False,
+                    sequence_pattern="$AYON_CACHE/cache/sim.*.bgeo.sc",
+                    parm_path="/obj/geo1/filecache1/sopoutput",
+                    node_path="/obj/geo1/filecache1",
+                    missing_variables=("AYON_CACHE",),
+                    can_update=True,
+                )
+            ]
+        )
+
+        status_index = relinker._reference_model.index(0, 0)
+        note_index = relinker._reference_model.index(0, 8)
+        assert relinker._reference_model.data(status_index) == "Undefined variable"
+        assert relinker._reference_model.data(note_index) == "Undefined variables: AYON_CACHE"
+        assert "Undefined variables: AYON_CACHE" in relinker._reference_model.data(
+            status_index, TOOLTIP_ROLE
+        )
+
+        relinker.reference_table.selectRow(0)
+        relinker._selection_changed()
+        detail_text = relinker.detail_text.toPlainText()
+        assert "Status: undefined variable" in detail_text
+        assert "Undefined variables: AYON_CACHE" in detail_text
+        assert "Sequence pattern: $AYON_CACHE/cache/sim.*.bgeo.sc" in detail_text
     finally:
         relinker.close()
 

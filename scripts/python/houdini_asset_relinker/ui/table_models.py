@@ -87,37 +87,35 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
 
     def _display_value(self, reference: AssetReference, key: str) -> str:
         if key == "status":
-            if not reference.exists:
-                return "Missing"
-            if not reference.can_update:
-                return "Read only"
-            return "Ready"
+            return _status_text(reference)
         if key == "kind":
             return "HDA Library" if reference.kind == ReferenceKind.HDA_LIBRARY else "File Parm"
         if key == "parm_path":
             return _parameter_name(reference.parm_path)
         if key == "can_update":
             return "Yes" if reference.can_update else "No"
+        if key == "reason":
+            return _note_text(reference)
         value = getattr(reference, key)
         return str(value or "")
 
     def _tooltip(self, reference: AssetReference) -> str:
         location = reference.parm_path or reference.node_path or "<session/reference>"
-        note = reference.reason or (
-            "Writable reference" if reference.can_update else "Not writable"
-        )
+        note = _note_text(reference)
         return "\n".join(
             [
                 f"Location: {location}",
+                f"Status: {_status_text(reference)}",
                 f"Path family: {reference.path_family}",
                 f"Raw: {reference.raw_path}",
                 f"Expanded: {reference.expanded_path}",
+                f"Sequence pattern: {reference.sequence_pattern}",
                 f"Note: {note}",
             ]
         )
 
     def _status_brush(self, reference: AssetReference) -> QtGui.QBrush:
-        if not reference.exists:
+        if reference.missing_variables or not reference.exists:
             return QtGui.QBrush(QtGui.QColor("#d9534f"))
         if not reference.can_update:
             return QtGui.QBrush(QtGui.QColor("#d99000"))
@@ -162,7 +160,7 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
             return False
         del source_parent
         reference = source.reference_at(source_row)
-        if self._show_missing_only and reference.exists:
+        if self._show_missing_only and reference.exists and not reference.missing_variables:
             return False
         if self._show_writable_only and not reference.can_update:
             return False
@@ -180,6 +178,8 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
                 reference.path_family,
                 reference.raw_path,
                 reference.expanded_path,
+                reference.sequence_pattern,
+                _missing_variables_text(reference),
                 reference.reason,
             ]
         ).casefold()
@@ -251,3 +251,28 @@ def _parameter_name(parm_path: Optional[str]) -> str:
     if not parm_path:
         return ""
     return parm_path.rsplit("/", 1)[-1]
+
+
+def _status_text(reference: AssetReference) -> str:
+    """Return the user-visible reference status."""
+    if reference.missing_variables:
+        return "Undefined variable"
+    if not reference.exists:
+        return "Missing"
+    if not reference.can_update:
+        return "Read only"
+    return "Ready"
+
+
+def _note_text(reference: AssetReference) -> str:
+    """Return the user-visible note for a reference."""
+    if reference.missing_variables:
+        return _missing_variables_text(reference)
+    return reference.reason or ("Writable reference" if reference.can_update else "Not writable")
+
+
+def _missing_variables_text(reference: AssetReference) -> str:
+    """Return a readable undefined-variable note."""
+    if not reference.missing_variables:
+        return ""
+    return f"Undefined variables: {', '.join(reference.missing_variables)}"

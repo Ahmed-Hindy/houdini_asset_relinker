@@ -8,7 +8,7 @@ from glob import glob
 from pathlib import Path
 from typing import Callable, Optional
 
-_FRAME_TOKEN_PATTERN = re.compile(r"(\$F\d*|%0?\d*d|#+|<UDIM>|<UVTILE>)", re.IGNORECASE)
+_FRAME_TOKEN_PATTERN = re.compile(r"(\$F\d*|<UDIM>)", re.IGNORECASE)
 _HOUDINI_VARIABLE_PATTERN = re.compile(
     r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))"
 )
@@ -16,6 +16,33 @@ _WINDOWS_DRIVE_PATTERN = re.compile(r"^([A-Za-z]:)(?:/(.*))?$")
 _URI_SCHEME_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 
 PATH_FAMILY_DEPTH = 3
+
+
+def build_sequence_pattern(
+    path_value: str, expand_string: Optional[Callable[[str], str]] = None
+) -> str:
+    """Return a glob pattern for Houdini frame or tile tokens.
+
+    Args:
+        path_value: Raw path value that may contain Houdini sequence tokens.
+        expand_string: Optional Houdini-style expansion function. Tokens are protected
+            before expansion so variables expand without losing the sequence pattern.
+
+    Returns:
+        A glob-like path pattern, or an empty string for non-sequence paths.
+    """
+    if not contains_sequence_token(path_value):
+        return ""
+    if expand_string is None:
+        return sequence_pattern(path_value)
+
+    protected_path, tokens = _protect_sequence_tokens(path_value)
+    try:
+        expanded_path = expand_string(protected_path)
+    except Exception:
+        expanded_path = protected_path
+    restored_path = _restore_sequence_tokens(expanded_path, tokens)
+    return sequence_pattern(restored_path)
 
 
 def contains_sequence_token(path_value: str) -> bool:
@@ -30,17 +57,19 @@ def normalize_for_compare(path_value: str) -> str:
     return os.path.normcase(normalized.rstrip("/")).replace("\\", "/")
 
 
-def path_exists(expanded_path: str) -> bool:
+def path_exists(expanded_path: str, sequence_path_pattern: str = "") -> bool:
     """Return whether an expanded path exists.
 
     Sequence and UDIM tokens are treated as a glob-like check where possible.
     """
     if not expanded_path:
         return False
-    if contains_sequence_token(expanded_path):
-        glob_pattern = _FRAME_TOKEN_PATTERN.sub("*", expanded_path)
+    if Path(expanded_path).exists():
+        return True
+    glob_pattern = sequence_path_pattern or sequence_pattern(expanded_path)
+    if glob_pattern:
         return bool(glob(glob_pattern))
-    return Path(expanded_path).exists()
+    return False
 
 
 def missing_variables(
@@ -116,6 +145,25 @@ def sequence_pattern(path_value: str) -> str:
     if not contains_sequence_token(path_value):
         return ""
     return _FRAME_TOKEN_PATTERN.sub("*", path_value)
+
+
+def _protect_sequence_tokens(path_value: str) -> tuple[str, tuple[str, ...]]:
+    """Replace sequence tokens with sentinels before Houdini expansion."""
+    tokens: list[str] = []
+
+    def replace_token(match: re.Match[str]) -> str:
+        tokens.append(match.group(0))
+        return f"__HAR_SEQUENCE_TOKEN_{len(tokens) - 1}__"
+
+    return _FRAME_TOKEN_PATTERN.sub(replace_token, path_value), tuple(tokens)
+
+
+def _restore_sequence_tokens(path_value: str, tokens: tuple[str, ...]) -> str:
+    """Restore protected sequence tokens after Houdini expansion."""
+    restored = path_value
+    for index, token in enumerate(tokens):
+        restored = restored.replace(f"__HAR_SEQUENCE_TOKEN_{index}__", token)
+    return restored
 
 
 def path_family(expanded_path: str, depth: int = PATH_FAMILY_DEPTH) -> str:

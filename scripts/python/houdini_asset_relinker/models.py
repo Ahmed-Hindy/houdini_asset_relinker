@@ -11,7 +11,6 @@ from houdini_asset_relinker.path_utils import (
     path_extension,
     path_family,
     path_root,
-    sequence_pattern,
 )
 
 
@@ -31,6 +30,7 @@ class AssetReference:
         raw_path: The unexpanded path when Houdini can provide it.
         expanded_path: The path after Houdini variable expansion when possible.
         exists: Whether the expanded path exists on disk.
+        sequence_pattern: Preserved glob-like pattern for Houdini sequences.
         path_family: Compact root/path-family label for grouping related references.
         parm_path: Full Houdini parameter path when the reference is stored on a parameter.
         parm_name: Houdini parameter token/name when available.
@@ -47,6 +47,7 @@ class AssetReference:
     raw_path: str
     expanded_path: str
     exists: bool
+    sequence_pattern: str
     path_family: str = ""
     parm_path: Optional[str] = None
     parm_name: str = ""
@@ -61,6 +62,9 @@ class AssetReference:
     def to_row(self) -> dict[str, object]:
         """Return a serializable row for CSV, JSON, or table display."""
         path_role = self.path_role or _infer_path_role(self)
+        path_for_root = (
+            self.raw_path if self.missing_variables else self.expanded_path or self.raw_path
+        )
         return {
             "kind": self.kind.value,
             "node_path": self.node_path or "",
@@ -71,9 +75,9 @@ class AssetReference:
             "path_role": path_role,
             "raw_path": self.raw_path,
             "expanded_path": self.expanded_path,
-            "root": path_root(self.expanded_path or self.raw_path),
+            "root": path_root(path_for_root),
             "extension": path_extension(self.expanded_path or self.raw_path),
-            "sequence_pattern": sequence_pattern(self.expanded_path or self.raw_path),
+            "sequence_pattern": self.sequence_pattern,
             "exists": self.exists,
             "path_family": self.path_family or path_family(self.raw_path),
             "can_update": self.can_update,
@@ -160,7 +164,7 @@ def rows_from_references(references: Iterable[AssetReference]) -> list[dict[str,
 def _diagnosis(reference: AssetReference) -> str:
     """Return a compact triage diagnosis for a reference."""
     if reference.missing_variables:
-        return "missing_variables"
+        return "undefined_variable"
     if reference.kind == ReferenceKind.HDA_LIBRARY and reference.raw_path == "Embedded":
         return "embedded_hda"
     if not reference.exists:

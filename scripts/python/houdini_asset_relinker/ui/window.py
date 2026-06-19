@@ -463,7 +463,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         layout.addLayout(form)
 
         self.case_sensitive_check = QtWidgets.QCheckBox("Case sensitive", self)
-        self.case_sensitive_check.setChecked(True)
+        self.case_sensitive_check.setChecked(False)
         self.case_sensitive_check.setToolTip("Match path text using exact letter case.")
         self.include_hda_replace_check = QtWidgets.QCheckBox("Relink HDA libraries too", self)
         self.include_hda_replace_check.setChecked(False)

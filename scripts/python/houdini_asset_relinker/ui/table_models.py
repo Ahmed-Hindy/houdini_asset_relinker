@@ -16,6 +16,12 @@ from houdini_asset_relinker.ui.qt_constants import (
     TOOLTIP_ROLE,
     USER_ROLE,
 )
+from houdini_asset_relinker.ui.style import (
+    STATUS_COLOR_MISSING,
+    STATUS_COLOR_NOT_UPDATABLE,
+    STATUS_COLOR_READY,
+    STATUS_COLOR_UNDEFINED_VARIABLE,
+)
 
 
 class ReferenceTableModel(QtCore.QAbstractTableModel):
@@ -115,11 +121,13 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
         )
 
     def _status_brush(self, reference: AssetReference) -> QtGui.QBrush:
-        if reference.missing_variables or not reference.exists:
-            return QtGui.QBrush(QtGui.QColor("#d9534f"))
+        if reference.missing_variables:
+            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_UNDEFINED_VARIABLE))
+        if not reference.exists:
+            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_MISSING))
         if not reference.can_update:
-            return QtGui.QBrush(QtGui.QColor("#d99000"))
-        return QtGui.QBrush(QtGui.QColor("#2f8f46"))
+            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_NOT_UPDATABLE))
+        return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_READY))
 
 
 class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
@@ -241,10 +249,10 @@ class UpdateResultTableModel(QtCore.QAbstractTableModel):
 
     def _status_brush(self, result: UpdateResult) -> QtGui.QBrush:
         if result.status == "failed":
-            return QtGui.QBrush(QtGui.QColor("#d9534f"))
+            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_MISSING))
         if result.status == "skipped":
-            return QtGui.QBrush(QtGui.QColor("#d99000"))
-        return QtGui.QBrush(QtGui.QColor("#2f8f46"))
+            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_NOT_UPDATABLE))
+        return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_READY))
 
 
 def _parameter_name(parm_path: Optional[str]) -> str:

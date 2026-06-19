@@ -102,3 +102,9 @@ QLabel#statLabel {
     color: #aab0b6;
 }
 """
+
+# Status column foreground colours
+STATUS_COLOR_READY = "#2f8f46"
+STATUS_COLOR_UNDEFINED_VARIABLE = "#d9a800"
+STATUS_COLOR_MISSING = "#d9534f"
+STATUS_COLOR_NOT_UPDATABLE = "#d99000"

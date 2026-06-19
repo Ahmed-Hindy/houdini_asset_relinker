@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from houdini_asset_relinker.path_utils import path_extension, path_root, sequence_pattern
+from houdini_asset_relinker.path_utils import (
+    path_extension,
+    path_family,
+    path_root,
+    sequence_pattern,
+)
 
 
 class ReferenceKind(str, Enum):
@@ -70,7 +75,7 @@ class AssetReference:
             "extension": path_extension(self.expanded_path or self.raw_path),
             "sequence_pattern": sequence_pattern(self.expanded_path or self.raw_path),
             "exists": self.exists,
-            "path_family": self.path_family,
+            "path_family": self.path_family or path_family(self.raw_path),
             "can_update": self.can_update,
             "diagnosis": _diagnosis(self),
             "missing_variables": ";".join(self.missing_variables),

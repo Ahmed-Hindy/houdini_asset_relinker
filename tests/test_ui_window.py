@@ -11,7 +11,11 @@ pytest.importorskip("PySide6")
 
 from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
 from houdini_asset_relinker.ui import window as window_module
-from houdini_asset_relinker.ui.window import AssetRelinkerWindow, ReplaceRequest
+from houdini_asset_relinker.ui.window import (
+    REFERENCE_PATH_FAMILY_COLUMN,
+    AssetRelinkerWindow,
+    ReplaceRequest,
+)
 
 
 @pytest.fixture
@@ -86,6 +90,19 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
         assert relinker.missing_only_check.isChecked()
         assert relinker.writable_only_check.isChecked()
         assert relinker._proxy_model.rowCount() == 1
+    finally:
+        relinker.close()
+
+
+def test_reference_table_sorts_by_path_family_by_default(qt_app) -> None:
+    """It opens the scan table sorted by raw-path family."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        assert relinker._proxy_model.sortColumn() == REFERENCE_PATH_FAMILY_COLUMN
+        assert relinker.reference_table.horizontalHeader().sortIndicatorSection() == (
+            REFERENCE_PATH_FAMILY_COLUMN
+        )
     finally:
         relinker.close()
 

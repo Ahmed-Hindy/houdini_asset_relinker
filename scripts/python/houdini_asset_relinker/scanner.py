@@ -13,6 +13,10 @@ from houdini_asset_relinker.path_utils import (
     path_family,
 )
 
+_IGNORED_FILE_REFERENCE_PARMS = {
+    "descriptivelabel",
+}
+
 
 def scan_assets(
     project_dir_variable: str = "HIP",
@@ -73,6 +77,8 @@ def scan_file_references(
             project_dir_variable=project_dir_variable,
             include_all_refs=include_all_refs,
         ):
+            if not _should_include_file_reference_parm(parm):
+                continue
             references.append(_reference_from_parm(parm, path_value))
     return references
 
@@ -92,7 +98,7 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
         raw_path=raw_path,
         expanded_path=expanded_path,
         exists=path_exists(expanded_path),
-        path_family=path_family(expanded_path),
+        path_family=path_family(raw_path),
         parm_path=parm_path,
         parm_name=parm_name,
         parm_label=parm_label,
@@ -124,7 +130,7 @@ def scan_hda_libraries() -> list[AssetReference]:
                 raw_path=raw_path,
                 expanded_path=expanded_path,
                 exists=path_exists(expanded_path) if raw_path != "Embedded" else True,
-                path_family=path_family(expanded_path) if raw_path != "Embedded" else "Embedded",
+                path_family=path_family(raw_path) if raw_path != "Embedded" else "Embedded",
                 path_role="hda_library",
                 missing_variables=_missing_variables(raw_path) if raw_path != "Embedded" else (),
                 can_update=can_update,
@@ -203,6 +209,70 @@ def _safe_parm_label(parm: Optional[object]) -> str:
         return str(parm.description())
     except Exception:
         return ""
+
+
+def _should_include_file_reference_parm(parm: Optional[object]) -> bool:
+    """Return whether a Houdini file reference parm should be relinkable."""
+    if parm is None:
+        return False
+
+    parm_name = _safe_parm_name(parm, _safe_parm_path(parm)).casefold()
+    if parm_name in _IGNORED_FILE_REFERENCE_PARMS:
+        return False
+
+    if not _is_file_reference_string_parm(parm):
+        return False
+
+    if _is_default_parm(parm):
+        return False
+
+    if _is_indirect_or_expression_parm(parm):
+        return False
+
+    return True
+
+
+def _is_file_reference_string_parm(parm: object) -> bool:
+    """Return whether the parameter template is a file-reference string parm."""
+    try:
+        parm_template = parm.parmTemplate()
+    except Exception:
+        return True
+
+    try:
+        string_type = parm_template.stringType()
+    except AttributeError:
+        return False
+    except Exception:
+        return True
+
+    return str(string_type).replace("_", "").casefold().endswith("filereference")
+
+
+def _is_default_parm(parm: object) -> bool:
+    """Return whether the parameter still has its untouched default value."""
+    try:
+        return bool(parm.isAtDefault())
+    except Exception:
+        return False
+
+
+def _is_indirect_or_expression_parm(parm: object) -> bool:
+    """Return whether a parm stores an expression or references another parm."""
+    parm_path = _safe_parm_path(parm)
+    try:
+        referenced_parm = parm.getReferencedParm()
+        referenced_path = _safe_parm_path(referenced_parm)
+    except Exception:
+        referenced_path = None
+    if parm_path and referenced_path and referenced_path != parm_path:
+        return True
+
+    try:
+        expression = parm.expression()
+    except Exception:
+        return False
+    return bool(str(expression).strip())
 
 
 def _missing_variables(raw_path: str) -> tuple[str, ...]:

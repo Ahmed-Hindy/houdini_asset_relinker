@@ -27,6 +27,28 @@ class FakeNode:
         return SimpleNamespace(name=lambda: self._type_name)
 
 
+class FakeParmTemplate:
+    """Minimal stand-in for a Houdini parameter template."""
+
+    def __init__(self, string_type: str = "stringParmType.FileReference") -> None:
+        self._string_type = string_type
+
+    def stringType(self) -> str:
+        """Return the fake string parameter type."""
+        return self._string_type
+
+
+class FakeReferencedParm:
+    """Minimal stand-in for the referenced end of a channel reference."""
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def path(self) -> str:
+        """Return the referenced parameter path."""
+        return self._path
+
+
 class FakeParm:
     """Minimal stand-in for a Houdini parameter."""
 
@@ -37,12 +59,20 @@ class FakeParm:
         locked: bool = False,
         label: str = "Geometry File",
         node_type: str = "filecache",
+        string_type: str = "stringParmType.FileReference",
+        at_default: bool = False,
+        expression: str = "",
+        referenced_path: str = "",
     ) -> None:
         self._path = path
         self._raw_value = raw_value
         self._locked = locked
         self._label = label
         self._node_type = node_type
+        self._string_type = string_type
+        self._at_default = at_default
+        self._expression = expression
+        self._referenced_path = referenced_path
 
     def unexpandedString(self) -> str:
         """Return the raw parameter value."""
@@ -60,6 +90,10 @@ class FakeParm:
         """Return the fake parameter label."""
         return self._label
 
+    def parmTemplate(self) -> FakeParmTemplate:
+        """Return a fake Houdini parameter template."""
+        return FakeParmTemplate(self._string_type)
+
     def node(self) -> FakeNode:
         """Return the owning fake node."""
         return FakeNode("/obj/geo1", self._node_type)
@@ -67,6 +101,22 @@ class FakeParm:
     def isLocked(self) -> bool:
         """Return whether the fake parameter is locked."""
         return self._locked
+
+    def isAtDefault(self) -> bool:
+        """Return whether the fake parameter still has its default value."""
+        return self._at_default
+
+    def expression(self) -> str:
+        """Return the fake parameter expression when present."""
+        if not self._expression:
+            raise ValueError("No expression")
+        return self._expression
+
+    def getReferencedParm(self):
+        """Return the final referenced parm for channel references."""
+        if self._referenced_path:
+            return FakeReferencedParm(self._referenced_path)
+        return FakeReferencedParm(self._path)
 
 
 class FakeRootNode:
@@ -117,7 +167,7 @@ def test_scan_file_references_expands_and_reports_writable_parms(
     assert reference.raw_path == "$HIP/texture.exr"
     assert Path(reference.expanded_path) == texture_path
     assert reference.exists
-    assert reference.path_family == path_family(str(texture_path))
+    assert reference.path_family == path_family("$HIP/texture.exr")
     assert reference.can_update
     assert reference.parm_path == "/obj/geo1/file1/file"
     assert reference.parm_name == "file"
@@ -144,6 +194,53 @@ def test_scan_file_references_marks_locked_parms_as_not_updatable(
 
     assert not references[0].can_update
     assert references[0].reason == "Parameter is locked"
+
+
+def test_scan_file_references_skips_non_relinkable_file_reference_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """It ignores default, metadata, regular-string, and indirect file refs."""
+    relinkable = FakeParm("/obj/geo1/file1/file", "$HIP/texture.exr")
+    default_plugin_parm = FakeParm(
+        "/obj/geo1/ar_crowd_cache_dir",
+        "$HIP",
+        at_default=True,
+    )
+    descriptive_label = FakeParm(
+        "/obj/geo1/hda1/descriptivelabel",
+        "$HIP/not_an_asset.exr",
+        label="Descriptive Label",
+    )
+    regular_string = FakeParm(
+        "/obj/geo1/hda1/comment",
+        "$HIP/not_a_file_reference.exr",
+        string_type="stringParmType.Regular",
+    )
+    expression_reference = FakeParm(
+        "/obj/geo1/file2/file",
+        "$HIP/texture.exr",
+        expression='chs("../file1/file")',
+        referenced_path="/obj/geo1/file1/file",
+    )
+    root = FakeRootNode(
+        [
+            (default_plugin_parm, "$HIP"),
+            (descriptive_label, "$HIP/not_an_asset.exr"),
+            (regular_string, "$HIP/not_a_file_reference.exr"),
+            (expression_reference, "$HIP/texture.exr"),
+            (relinkable, "$HIP/texture.exr"),
+        ]
+    )
+    fake_hou = SimpleNamespace(
+        node=lambda path: root if path == "/" else None,
+        expandString=lambda value: value.replace("$HIP", str(tmp_path)),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    references = scan_file_references()
+
+    assert [reference.parm_path for reference in references] == ["/obj/geo1/file1/file"]
 
 
 def test_scan_assets_can_include_hda_libraries(monkeypatch, tmp_path: Path) -> None:

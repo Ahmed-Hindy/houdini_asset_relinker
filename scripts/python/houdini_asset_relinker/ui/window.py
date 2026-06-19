@@ -43,6 +43,7 @@ from houdini_asset_relinker.ui.table_models import (
 from houdini_asset_relinker.updater import replace_hda_library_paths, replace_path_text
 
 WINDOW_OBJECT_NAME = "houdiniAssetRelinkerWindow"
+REFERENCE_PATH_FAMILY_COLUMN = 4
 _WINDOW: Optional[AssetRelinkerWindow] = None
 
 
@@ -392,7 +393,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table = QtWidgets.QTableView(self)
         self.reference_table.setModel(self._proxy_model)
         self.reference_table.setSortingEnabled(True)
-        self.reference_table.sortByColumn(0, ASCENDING_ORDER)
+        self.reference_table.sortByColumn(REFERENCE_PATH_FAMILY_COLUMN, ASCENDING_ORDER)
         self.reference_table.setSelectionBehavior(SELECT_ROWS)
         self.reference_table.setSelectionMode(SINGLE_SELECTION)
         self.reference_table.setAlternatingRowColors(True)

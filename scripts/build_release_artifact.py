@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
-import re
 import shutil
 import sys
 import zipfile
@@ -13,11 +12,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FILE = REPO_ROOT / "scripts" / "python" / "houdini_asset_relinker" / "_version.py"
-ROOT_VERSION_FILE = REPO_ROOT / "VERSION"
-PYPROJECT_FILE = REPO_ROOT / "pyproject.toml"
 
 PACKAGE_DIRS = ("package", "toolbar", "images")
-PACKAGE_FILES = ("README.md", "DEVELOPER.md", "VERSION")
+PACKAGE_FILES = ("README.md", "DEVELOPER.md")
 
 
 def read_runtime_version() -> str:
@@ -33,19 +30,8 @@ def read_runtime_version() -> str:
     raise RuntimeError(f"Could not find VERSION in {VERSION_FILE}")
 
 
-def read_pyproject_version() -> str:
-    """Read the static project version from pyproject.toml."""
-    match = re.search(
-        r'(?m)^version\s*=\s*"([^"]+)"\s*$',
-        PYPROJECT_FILE.read_text(encoding="utf-8"),
-    )
-    if not match:
-        raise RuntimeError(f"Could not find project.version in {PYPROJECT_FILE}")
-    return match.group(1)
-
-
 def validate_versions(expected_version: str | None = None) -> str:
-    """Validate every release version marker before building.
+    """Validate the runtime version before building.
 
     Args:
         expected_version: Optional version expected by CI, usually from the git tag.
@@ -57,14 +43,8 @@ def validate_versions(expected_version: str | None = None) -> str:
         RuntimeError: If any version marker disagrees.
     """
     runtime_version = read_runtime_version()
-    pyproject_version = read_pyproject_version()
-    root_version = ROOT_VERSION_FILE.read_text(encoding="utf-8").strip()
 
     mismatches = []
-    if pyproject_version != runtime_version:
-        mismatches.append(f"pyproject.toml={pyproject_version}")
-    if root_version != runtime_version:
-        mismatches.append(f"VERSION={root_version}")
     if expected_version and expected_version != runtime_version:
         mismatches.append(f"expected={expected_version}")
 
@@ -103,6 +83,8 @@ def copy_release_tree(staging_dir: Path) -> None:
         source = REPO_ROOT / filename
         if source.exists():
             shutil.copy2(source, staging_dir / filename)
+
+    (staging_dir / "VERSION").write_text(f"{read_runtime_version()}\n", encoding="utf-8")
 
 
 def create_zip(staging_dir: Path, archive_path: Path) -> None:

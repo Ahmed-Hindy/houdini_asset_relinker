@@ -10,7 +10,6 @@ For artist-focused instructions on how to use the GUI tool, please refer to the 
 
 ```text
 houdini_asset_relinker/
-├─ VERSION                             # Release artifact version
 ├─ package/
 │  └─ houdini_asset_relinker.json      # Copy this to your houdini21.0/packages folder
 ├─ toolbar/
@@ -27,7 +26,7 @@ houdini_asset_relinker/
 - **package/**: Contains the Houdini package definition JSON.
 - **toolbar/**: Standard shelf file (`asset_relinker.shelf`).
 - **scripts/python/**: Runtime Python module path. Placed in `HOUDINI_PATH` so Houdini automatically appends it to `sys.path`.
-- **VERSION** and `houdini_asset_relinker._version`: Release version markers for the Houdini package. No wheel metadata is required at runtime.
+- **houdini_asset_relinker._version**: Single source of truth for the release version. No wheel metadata is required at runtime.
 
 ---
 
@@ -120,9 +119,9 @@ print(report.to_text())
 For standalone interface design/development outside Houdini, install the optional PySide6 dependencies:
 
 ```powershell
-uv sync --extra pyside6
+uv sync --group pyside6
 $env:PYTHONPATH = "scripts/python"
-uv run --extra pyside6 python -m houdini_asset_relinker.ui
+uv run --group pyside6 python -m houdini_asset_relinker.ui
 ```
 
 > [!NOTE]
@@ -132,19 +131,17 @@ uv run --extra pyside6 python -m houdini_asset_relinker.ui
 
 ## Versioning & Release Artifacts
 
-This project is distributed as a Houdini package folder, not as a Python wheel. The runtime version lives in:
+This project is distributed as a Houdini package folder, not as a Python wheel. The single source of truth for the runtime and release version is:
 
 - `scripts/python/houdini_asset_relinker/_version.py`
-- `VERSION`
-- `pyproject.toml` under `project.version` for dev-tool metadata only
 
-Keep all three values synchronized when cutting a release. The release artifact builder validates them before producing the zip:
+The release artifact builder validates the version against the release tag before producing the zip:
 
 ```powershell
-uv run python scripts/build_release_artifact.py --out-dir dist --expected-version 0.3.0
+uv run python scripts/build_release_artifact.py --out-dir dist --expected-version X.Y.Z
 ```
 
-Release tags should use the `vX.Y.Z` form, for example `v0.3.0`. The GitHub Actions release workflow builds `dist/houdini_asset_relinker-X.Y.Z.zip`, writes a `.sha256` checksum, uploads both as workflow artifacts, and attaches them to the matching GitHub release.
+Release tags should use the `vX.Y.Z` form. The GitHub Actions release workflow builds `dist/houdini_asset_relinker-X.Y.Z.zip`, writes a generated `VERSION` file into that artifact, writes a `.sha256` checksum, uploads both as workflow artifacts, and attaches them to the matching GitHub release.
 
 ---
 
@@ -155,6 +152,9 @@ We use `uv` for python tooling.
 ```powershell
 # Sync workspace environment
 uv sync
+
+# Refresh lockfile for the Houdini-compatible Python floor
+uv --system-certs lock --python 3.9
 
 # Check code formatting & linting
 uv run ruff check .

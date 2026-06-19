@@ -1,21 +1,11 @@
-[project]
-name = "houdini-asset-relinker"
-version = "0.3.0"
-description = "Houdini HOM utility to scan and relink external asset paths in a hip file."
-readme = "README.md"
-requires-python = ">=3.9"
-dependencies = []
-
-[project.optional-dependencies]
-pyside6 = [
-    "pyside6>=6.6",
-]
-
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",
     "pytest>=8.0.0",
     "ruff>=0.6.0",
+]
+pyside6 = [
+    "pyside6>=6.6",
 ]
 
 [tool.ruff]

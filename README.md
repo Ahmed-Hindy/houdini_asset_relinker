@@ -1,156 +1,64 @@
 # Houdini Asset Relinker
 
-A small Houdini 21.0 Python utility for auditing external asset paths in the current `.hip` session and safely replacing/updating those paths.
+A friendly Python tool for auditing, finding, and replacing external asset paths (like textures, geometry caches, USD files, and HDAs) in your current Houdini session.
 
-This is laid out as a Houdini package directory, not only as a generic Python repo. Runtime code lives under `scripts/python/`, and the shelf file lives under Houdini's standard `toolbar/` directory.
+![Houdini Asset Relinker UI](images/screenshot.png)
 
-## Directory layout
+---
 
-```text
-houdini_asset_relinker/
-├─ package/
-│  └─ houdini_asset_relinker.json      # Copy this to your houdini21.0/packages folder
-├─ toolbar/
-│  └─ asset_relinker.shelf             # Standard Houdini shelf location under HOUDINI_PATH
-├─ scripts/
-│  └─ python/
-│     └─ houdini_asset_relinker/       # Importable Houdini Python package
-├─ tests/
-│  └─ test_path_utils.py
-├─ pyproject.toml                      # uv / ruff / pytest config
-└─ README.md
-```
+## What It Does
 
-## What it scans
+When working on large Houdini scenes, asset paths can easily break when projects move or local drive letters change. This tool helps you:
+- **Scan** the entire scene to list all external file paths.
+- **Identify** broken paths (marked in red as `Missing`).
+- **Search & Filter** to find specific nodes or parameters.
+- **Find & Replace** paths safely across all nodes in the scene.
+- **Relink HDAs** (custom digital asset libraries) and manage library installation.
 
-- External file references returned by `hou.fileReferences()`.
-- Optional loaded HDA library files returned by `hou.hda.loadedFiles()`.
+---
 
-Typical matches include geometry caches, textures, USD/Alembic paths, output paths, task graph files, and HDA/OTL library references reported by Houdini.
+## How to Open the Tool
 
-## Install in Houdini 21.0 on Windows
+Once installed by your pipeline TD, you will find the tool on your Houdini shelf:
+1. Open your Houdini Shelf set.
+2. Click the **Asset Relinker** shelf tool.
+3. This opens a floating window where you can run scans and perform operations.
 
-Your current package root is:
+*For installation, programmatic usage, or local development details, please see the [Developer & Technical Guide](DEVELOPER.md).*
 
-```text
-F:/Users/Ahmed Hindy/Documents/houdiniTools/houdini_asset_relinker
-```
+---
 
-Copy this file:
+## How to Use (Step-by-Step)
 
-```text
-F:/Users/Ahmed Hindy/Documents/houdiniTools/houdini_asset_relinker/package/houdini_asset_relinker.json
-```
+### Step 1: Scan Your Scene
+1. Click **Scan Scene** at the top right to analyze the current session.
+2. Under **Project var**, specify your main project directory variable (e.g., `HIP` or `JOB`).
+3. You can customize the scan with these options:
+   - **All file refs**: Audit every file reference.
+   - **Loaded HDA libraries**: Scan for custom digital asset libraries.
+   - **Locked-node contents**: Scan parameters inside locked HDAs.
 
-to:
+### Step 2: Inspect and Filter
+Once scanned, you will see a list of references with statuses:
+- 🟢 **Ready**: The file exists and is located at the correct path.
+- 🔴 **Missing**: The file cannot be found on disk.
+- 🟡 **Undefined variable**: The path contains an environment variable that is not set in the current session.
 
-```text
-C:/Users/Ahmed Hindy/Documents/houdini21.0/packages/houdini_asset_relinker.json
-```
+Use the search bar at the top to filter paths by node names, parameters, or path text. Check **Missing only** to focus purely on broken assets.
 
-Then restart Houdini.
+### Step 3: Find & Replace Paths
+To update multiple paths at once:
+1. Go to the **Relink** tab on the right side.
+2. In the **Find** field, enter the old path prefix (e.g., `P:/old_show` or `D:/temp`).
+3. In the **Replace with** field, enter the new path (e.g., `P:/new_show` or `$HIP/assets`).
+4. Click **Preview** to see what changes will be made in the preview table below.
+5. Review the changes, then click **Apply** to run the update on your scene parameters.
 
-The package JSON uses this root:
+---
 
-```json
-{
-  "load_package_once": true,
-  "env": [
-    {
-      "ASSET_RELINKER_ROOT": "F:/Users/Ahmed Hindy/Documents/houdiniTools/houdini_asset_relinker"
-    },
-    {
-      "HOUDINI_PATH": {
-        "method": "prepend",
-        "value": "$ASSET_RELINKER_ROOT"
-      }
-    }
-  ]
-}
-```
+## Safety Notes
 
-`HOUDINI_PATH` points at the package root so Houdini can discover both `scripts/python/` and the standard `toolbar/` shelf directory. No custom toolbar path is needed.
-
-## Verify it loaded
-
-In Houdini's Python Shell:
-
-```python
-import houdini_asset_relinker
-print(houdini_asset_relinker.__file__)
-```
-
-Expected result should include:
-
-```text
-F:/Users/Ahmed Hindy/Documents/houdiniTools/houdini_asset_relinker/scripts/python/houdini_asset_relinker/__init__.py
-```
-
-Open the UI manually:
-
-```python
-from houdini_asset_relinker.ui import open_dialog
-open_dialog()
-```
-
-You should also see a toolbar/shelf tool named **Asset Relinker**.
-
-The shelf opens a full PySide window inside Houdini. On Houdini 21.0 it uses the
-Qt binding provided by Houdini, typically PySide2. The window includes:
-
-- Scene scanning with optional HDA library references.
-- Sortable and filterable reference table.
-- Missing/writable/HDA summary counters.
-- Selected-reference details, copy, reveal-on-disk, and select-node actions.
-- CSV export.
-- Dry-run find/replace preview before applying parameter path updates.
-- Optional HDA library relinking with an uninstall-old-library toggle.
-
-For standalone development outside Houdini, install the optional PySide6 extra:
-
-```powershell
-uv --system-certs sync --extra pyside6
-uv --system-certs run --extra pyside6 houdini-asset-relinker
-```
-
-Standalone mode can open the interface, but scanning and applying still require
-Houdini or hython because the backend reads the live `hou` session.
-
-## Programmatic usage inside Houdini
-
-```python
-from houdini_asset_relinker.scanner import scan_assets
-from houdini_asset_relinker.updater import replace_path_text
-
-references = scan_assets(project_dir_variable="HIP", include_hda_libraries=False)
-for reference in references:
-    print(reference.raw_path, reference.expanded_path, reference.exists)
-
-report = replace_path_text("P:/old_show", "P:/new_show", dry_run=True)
-print(report.to_text())
-
-# Apply after reviewing the dry run:
-report = replace_path_text("P:/old_show", "P:/new_show", dry_run=False)
-print(report.to_text())
-```
-
-## Development setup
-
-From PowerShell:
-
-```powershell
-cd "F:\Users\Ahmed Hindy\Documents\houdiniTools\houdini_asset_relinker"
-uv --system-certs sync
-uv --system-certs run ruff check .
-uv --system-certs run ruff format .
-uv --system-certs run python -m pytest
-```
-
-The runtime Houdini tool does not require third-party packages installed into Houdini. `uv`, `ruff`, and `pytest` are only for development outside Houdini.
-
-## Safety notes
-
-- Dry run is the default for path replacement APIs.
-- Parameter updates are skipped when the reference is not stored on a real `hou.Parm`.
-- HDA library replacement is intentionally conservative: it installs the new library path first, then optionally uninstalls the old library path.
-- Save a copy of the `.hip` before applying large path changes.
+- **Backup**: Always save a backup copy of your `.hip` file before applying large path replacements.
+- **Use Preview**: Always click **Preview** first and review the target list to make sure you are only modifying the intended nodes.
+- **Locked Nodes**: The tool will not edit parameters inside locked assets (which are read-only).
+- **HDA Uninstall**: When relinking HDA libraries, checking *Uninstall old HDA libraries* will automatically clean up the old library paths from the session.

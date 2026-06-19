@@ -26,6 +26,7 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
         ("kind", "Kind"),
         ("node_path", "Node"),
         ("parm_path", "Parameter"),
+        ("path_family", "Path Family"),
         ("raw_path", "Raw Path"),
         ("expanded_path", "Expanded Path"),
         ("can_update", "Writable"),
@@ -108,6 +109,7 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
         return "\n".join(
             [
                 f"Location: {location}",
+                f"Path family: {reference.path_family}",
                 f"Raw: {reference.raw_path}",
                 f"Expanded: {reference.expanded_path}",
                 f"Note: {note}",
@@ -175,6 +177,7 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
                 reference.kind.value,
                 reference.node_path or "",
                 reference.parm_path or "",
+                reference.path_family,
                 reference.raw_path,
                 reference.expanded_path,
                 reference.reason,

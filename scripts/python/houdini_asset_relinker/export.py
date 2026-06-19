@@ -14,6 +14,7 @@ _FIELDNAMES = [
     "parm_path",
     "raw_path",
     "expanded_path",
+    "path_family",
     "exists",
     "can_update",
     "reason",

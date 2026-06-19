@@ -45,6 +45,51 @@ def relinker_window(qt_app):
     relinker.close()
 
 
+def test_startup_filters_match_checked_widgets(qt_app) -> None:
+    """It applies checked missing/writable filters before the user toggles them."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        relinker._reference_model.set_references(
+            [
+                AssetReference(
+                    kind=ReferenceKind.FILE_PARAMETER,
+                    raw_path="P:/show/cache/missing.bgeo.sc",
+                    expanded_path="P:/show/cache/missing.bgeo.sc",
+                    exists=False,
+                    parm_path="/obj/geo1/file1/file",
+                    node_path="/obj/geo1",
+                    can_update=True,
+                ),
+                AssetReference(
+                    kind=ReferenceKind.FILE_PARAMETER,
+                    raw_path="P:/show/cache/ready.bgeo.sc",
+                    expanded_path="P:/show/cache/ready.bgeo.sc",
+                    exists=True,
+                    parm_path="/obj/geo1/file2/file",
+                    node_path="/obj/geo1",
+                    can_update=True,
+                ),
+                AssetReference(
+                    kind=ReferenceKind.FILE_PARAMETER,
+                    raw_path="P:/show/cache/locked.bgeo.sc",
+                    expanded_path="P:/show/cache/locked.bgeo.sc",
+                    exists=False,
+                    parm_path="/obj/geo1/file3/file",
+                    node_path="/obj/geo1",
+                    can_update=False,
+                    reason="Parameter is locked",
+                ),
+            ]
+        )
+
+        assert relinker.missing_only_check.isChecked()
+        assert relinker.writable_only_check.isChecked()
+        assert relinker._proxy_model.rowCount() == 1
+    finally:
+        relinker.close()
+
+
 def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
     """It disables Apply when replacement settings diverge from the preview."""
     relinker_window.find_edit.setText("P:/old_show")

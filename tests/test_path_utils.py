@@ -5,6 +5,7 @@ from pathlib import Path
 from houdini_asset_relinker.path_utils import (
     contains_sequence_token,
     path_exists,
+    path_family,
     replace_root,
     replace_text,
 )
@@ -61,3 +62,30 @@ def test_path_exists_accepts_absolute_udim_patterns(tmp_path: Path) -> None:
 def test_path_exists_returns_false_for_missing_sequence(tmp_path: Path) -> None:
     """It returns false when no files match a sequence pattern."""
     assert not path_exists(str(tmp_path / "missing.$F4.bgeo.sc"))
+
+
+def test_path_family_groups_windows_paths_by_root_family() -> None:
+    """It groups Windows paths by drive and the first useful folders."""
+    assert (
+        path_family("F:/Assets 3D/Megascans/Downloaded/3d/asset/file.usd")
+        == "F:/Assets 3D/Megascans/Downloaded"
+    )
+    assert (
+        path_family("G:/projects/Data_folder/cache/Canyon_Run/sq001/cache.bgeo.sc")
+        == "G:/projects/Data_folder/cache"
+    )
+    assert path_family("F:/Assets 3D/HDRI/sky.exr") == "F:/Assets 3D/HDRI"
+
+
+def test_path_family_groups_relative_and_bare_paths() -> None:
+    """It gives relative paths and bare tokens compact grouping labels."""
+    assert path_family("layers/cache_Tie_Fighter_bolts.usd") == "layers"
+    assert path_family("SCATTERED_ASSETS_v1.usd") == "<bare>"
+
+
+def test_path_family_preserves_unc_share_root() -> None:
+    """It groups UNC paths without losing their server/share prefix."""
+    assert (
+        path_family("//fileserver/projects/show/assets/model.usd")
+        == "//fileserver/projects/show/assets"
+    )

@@ -11,11 +11,36 @@
 
   <tool name="asset_relinker_open" label="Asset Relinker" icon="BUTTONS_reload">
     <helpText><![CDATA[Scan and replace external asset paths in the current hip file.]]></helpText>
-    <script scriptType="python"><![CDATA[from importlib import reload
+    <script scriptType="python"><![CDATA[import importlib
+import pkgutil
+import sys
+
+
+def reload_package(package_name):
+    package = importlib.import_module(package_name)
+
+    # Import any modules that exist on disk but are not loaded yet.
+    for module_info in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+        importlib.import_module(module_info.name)
+
+    # Reload loaded modules in their import order, then the root package last.
+    # This keeps dependencies fresher before modules that imported from them.
+    module_names = [
+        name
+        for name in sys.modules
+        if name == package_name or name.startswith(package_name + ".")
+    ]
+
+    for name in module_names:
+        importlib.reload(sys.modules[name])
+
+    return importlib.reload(package)
+
+
+reload_package("houdini_asset_relinker")
 from houdini_asset_relinker import ui
-reload(ui)
 
 ui.open_dialog()
-    ]]></script>
+]]></script>
   </tool>
 </shelfDocument>

@@ -307,7 +307,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             "Include all Houdini file references instead of only selected references."
         )
         self.include_hda_check = QtWidgets.QCheckBox("Loaded HDA libraries", self)
-        self.include_hda_check.setChecked(True)
+        self.include_hda_check.setChecked(False)
         self.include_hda_check.setToolTip("Include loaded HDA library files in the scan.")
         self.recurse_locked_check = QtWidgets.QCheckBox("Locked-node contents", self)
         self.recurse_locked_check.setChecked(False)
@@ -400,12 +400,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.verticalHeader().setVisible(False)
         self.reference_table.horizontalHeader().setStretchLastSection(True)
         self.reference_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
-        self.reference_table.setColumnWidth(0, 86)
-        self.reference_table.setColumnWidth(1, 100)
+        self.reference_table.setColumnWidth(0, 65)
+        self.reference_table.setColumnWidth(1, 65)
         self.reference_table.setColumnWidth(2, 190)
-        self.reference_table.setColumnWidth(3, 220)
-        self.reference_table.setColumnWidth(4, 300)
+        self.reference_table.setColumnWidth(3, 100)
+        self.reference_table.setColumnWidth(4, 220)
         self.reference_table.setColumnWidth(5, 300)
+        self.reference_table.setColumnWidth(6, 300)
         self.reference_table.setToolTip(
             "Right-click a reference to copy its path, reveal it on disk, or select its node."
         )
@@ -527,8 +528,17 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._proxy_model.rowsInserted.connect(self._update_summary)
         self._proxy_model.rowsRemoved.connect(self._update_summary)
         self._proxy_model.modelReset.connect(self._update_summary)
+        self._sync_reference_filters()
 
     def _kind_filter_changed(self, *_args: object) -> None:
+        self._proxy_model.set_kind_filter(self.kind_combo.currentData())
+        self._update_summary()
+
+    def _sync_reference_filters(self) -> None:
+        """Apply initial widget filter state to the proxy model."""
+        self._proxy_model.set_search_text(self.search_edit.text())
+        self._proxy_model.set_show_missing_only(self.missing_only_check.isChecked())
+        self._proxy_model.set_show_writable_only(self.writable_only_check.isChecked())
         self._proxy_model.set_kind_filter(self.kind_combo.currentData())
         self._update_summary()
 
@@ -551,6 +561,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                     f"Writable: {'yes' if reference.can_update else 'no'}",
                     f"Node: {reference.node_path or ''}",
                     f"Parameter: {reference.parm_path or ''}",
+                    f"Path family: {reference.path_family}",
                     "",
                     f"Raw path:\n{reference.raw_path}",
                     "",

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from houdini_asset_relinker.models import ReferenceKind
+from houdini_asset_relinker.path_utils import path_family
 from houdini_asset_relinker.scanner import scan_assets, scan_file_references
 
 
@@ -93,6 +94,7 @@ def test_scan_file_references_expands_and_reports_writable_parms(
     assert reference.raw_path == "$HIP/texture.exr"
     assert Path(reference.expanded_path) == texture_path
     assert reference.exists
+    assert reference.path_family == path_family(str(texture_path))
     assert reference.can_update
     assert reference.parm_path == "/obj/geo1/file1/file"
     assert reference.node_path == "/obj/geo1"

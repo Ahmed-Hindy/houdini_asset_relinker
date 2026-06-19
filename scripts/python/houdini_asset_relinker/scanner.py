@@ -6,7 +6,7 @@ from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind
-from houdini_asset_relinker.path_utils import normalize_for_compare, path_exists
+from houdini_asset_relinker.path_utils import normalize_for_compare, path_exists, path_family
 
 
 def scan_assets(
@@ -84,6 +84,7 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
         raw_path=raw_path,
         expanded_path=expanded_path,
         exists=path_exists(expanded_path),
+        path_family=path_family(expanded_path),
         parm_path=parm_path,
         node_path=node_path,
         can_update=can_update,
@@ -111,6 +112,7 @@ def scan_hda_libraries() -> list[AssetReference]:
                 raw_path=raw_path,
                 expanded_path=expanded_path,
                 exists=path_exists(expanded_path) if raw_path != "Embedded" else True,
+                path_family=path_family(expanded_path) if raw_path != "Embedded" else "Embedded",
                 can_update=can_update,
                 reason=reason,
             )

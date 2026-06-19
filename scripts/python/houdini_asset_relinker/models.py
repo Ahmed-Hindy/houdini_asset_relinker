@@ -24,6 +24,7 @@ class AssetReference:
         raw_path: The unexpanded path when Houdini can provide it.
         expanded_path: The path after Houdini variable expansion when possible.
         exists: Whether the expanded path exists on disk.
+        path_family: Compact root/path-family label for grouping related references.
         parm_path: Full Houdini parameter path when the reference is stored on a parameter.
         node_path: Full Houdini node path owning the parameter.
         can_update: Whether the tool can update this reference directly.
@@ -34,6 +35,7 @@ class AssetReference:
     raw_path: str
     expanded_path: str
     exists: bool
+    path_family: str = ""
     parm_path: Optional[str] = None
     node_path: Optional[str] = None
     can_update: bool = False
@@ -48,6 +50,7 @@ class AssetReference:
             "raw_path": self.raw_path,
             "expanded_path": self.expanded_path,
             "exists": self.exists,
+            "path_family": self.path_family,
             "can_update": self.can_update,
             "reason": self.reason,
         }

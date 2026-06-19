@@ -14,6 +14,10 @@ from houdini_asset_relinker.ui import window as window_module
 from houdini_asset_relinker.ui.qt_constants import TOOLTIP_ROLE
 from houdini_asset_relinker.ui.window import (
     REFERENCE_PATH_FAMILY_COLUMN,
+    SCOPE_MISSING_UNDER_ROOT,
+    SCOPE_PATH_FAMILY,
+    SCOPE_SELECTED_ROW,
+    SCOPE_VISIBLE_ROWS,
     AssetRelinkerWindow,
     ReplaceRequest,
 )
@@ -49,6 +53,49 @@ def relinker_window(qt_app):
     )
     yield relinker
     relinker.close()
+
+
+def _set_scope(relinker: AssetRelinkerWindow, scope: str) -> None:
+    """Set the relink scope combo by stored scope id."""
+    index = relinker.scope_combo.findData(scope)
+    assert index >= 0
+    relinker.scope_combo.setCurrentIndex(index)
+
+
+def _select_reference_by_raw_path(relinker: AssetRelinkerWindow, raw_path: str) -> None:
+    """Select a reference row by raw path through the current proxy model."""
+    for row in range(relinker._proxy_model.rowCount()):
+        proxy_index = relinker._proxy_model.index(row, 0)
+        source_index = relinker._proxy_model.mapToSource(proxy_index)
+        reference = relinker._reference_model.reference_at(source_index.row())
+        if reference.raw_path == raw_path:
+            relinker.reference_table.selectRow(row)
+            return
+    raise AssertionError(f"Could not select reference: {raw_path}")
+
+
+def _reference(
+    raw_path: str,
+    *,
+    exists: bool = False,
+    can_update: bool = True,
+    path_family: str = "P:/old_show/cache",
+    parm_path: str = "/obj/geo1/file/file",
+    missing_variables: tuple[str, ...] = (),
+) -> AssetReference:
+    """Build a file-parameter reference for window tests."""
+    return AssetReference(
+        kind=ReferenceKind.FILE_PARAMETER,
+        raw_path=raw_path,
+        expanded_path=raw_path,
+        exists=exists,
+        sequence_pattern="",
+        path_family=path_family,
+        parm_path=parm_path,
+        node_path=parm_path.rsplit("/", 2)[0],
+        can_update=can_update,
+        missing_variables=missing_variables,
+    )
 
 
 def test_startup_filters_match_checked_widgets(qt_app) -> None:
@@ -165,6 +212,7 @@ def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
         case_sensitive=True,
         include_hda_libraries=False,
         uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
     )
     assert relinker_window._report_model.rowCount() == 1
 
@@ -221,5 +269,163 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, relinker_window) -> 
             case_sensitive=True,
             include_hda_libraries=False,
             uninstall_old_hda_libraries=False,
+            scope=SCOPE_VISIBLE_ROWS,
         )
+    ]
+
+
+def test_visible_scope_previews_only_filtered_rows(relinker_window) -> None:
+    """It limits preview targets to the rows accepted by current table filters."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("P:/old_show/cache/missing.bgeo.sc"),
+            _reference("P:/old_show/cache/ready.bgeo.sc", exists=True),
+            _reference("P:/old_show/cache/locked.bgeo.sc", can_update=False),
+        ]
+    )
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+
+    relinker_window.preview_replace()
+
+    assert [reference.raw_path for reference in relinker_window._preview_references] == [
+        "P:/old_show/cache/missing.bgeo.sc"
+    ]
+    assert relinker_window._report_model.rowCount() == 1
+
+
+def test_selected_row_scope_previews_only_selected_reference(relinker_window) -> None:
+    """It limits preview targets to the selected reference row."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("P:/old_show/cache/a.bgeo.sc", path_family="P:/old_show/cache"),
+            _reference("P:/old_show/textures/diffuse.exr", path_family="P:/old_show/textures"),
+        ]
+    )
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _set_scope(relinker_window, SCOPE_SELECTED_ROW)
+    _select_reference_by_raw_path(relinker_window, "P:/old_show/textures/diffuse.exr")
+
+    relinker_window.preview_replace()
+
+    assert [reference.raw_path for reference in relinker_window._preview_references] == [
+        "P:/old_show/textures/diffuse.exr"
+    ]
+    assert relinker_window._report_model.rowCount() == 1
+
+
+def test_path_family_scope_previews_selected_family(relinker_window) -> None:
+    """It targets all scanned references in the selected path family."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("P:/old_show/cache/a.bgeo.sc", path_family="P:/old_show/cache"),
+            _reference("P:/old_show/cache/b.bgeo.sc", path_family="P:/old_show/cache"),
+            _reference("P:/old_show/textures/diffuse.exr", path_family="P:/old_show/textures"),
+        ]
+    )
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _set_scope(relinker_window, SCOPE_PATH_FAMILY)
+    _select_reference_by_raw_path(relinker_window, "P:/old_show/cache/a.bgeo.sc")
+
+    relinker_window.preview_replace()
+
+    assert {reference.raw_path for reference in relinker_window._preview_references} == {
+        "P:/old_show/cache/a.bgeo.sc",
+        "P:/old_show/cache/b.bgeo.sc",
+    }
+    assert relinker_window._report_model.rowCount() == 2
+
+
+def test_missing_under_find_root_scope_excludes_existing_and_nonmatching_rows(
+    relinker_window,
+) -> None:
+    """It targets writable missing rows whose raw path is under the Find root."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("P:/old_show/cache/missing.bgeo.sc"),
+            _reference("P:/old_show/cache/ready.bgeo.sc", exists=True),
+            _reference("P:/old_show/cache/locked.bgeo.sc", can_update=False),
+            _reference("P:/other_show/cache/missing.bgeo.sc"),
+            _reference(
+                "$ASSET_ROOT/cache/missing.bgeo.sc",
+                missing_variables=("ASSET_ROOT",),
+                path_family="$ASSET_ROOT",
+            ),
+        ]
+    )
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _set_scope(relinker_window, SCOPE_MISSING_UNDER_ROOT)
+
+    relinker_window.preview_replace()
+
+    assert [reference.raw_path for reference in relinker_window._preview_references] == [
+        "P:/old_show/cache/missing.bgeo.sc"
+    ]
+    assert relinker_window._report_model.rowCount() == 1
+
+
+def test_apply_uses_preview_references_when_filters_change(monkeypatch, relinker_window) -> None:
+    """It applies the exact target set that produced the preview."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("P:/old_show/cache/a.bgeo.sc"),
+            _reference("P:/old_show/cache/b.bgeo.sc"),
+        ]
+    )
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    relinker_window.preview_replace()
+
+    applied_references: list[str] = []
+
+    def fake_build_replace_report(
+        request: ReplaceRequest,
+        references: list[AssetReference],
+        dry_run: bool,
+    ) -> UpdateReport:
+        del request
+        if dry_run:
+            return UpdateReport(
+                dry_run=True,
+                results=tuple(
+                    UpdateResult(
+                        status="would_change",
+                        old_path=reference.raw_path,
+                        new_path=reference.raw_path.replace("old_show", "new_show"),
+                        parm_path=reference.parm_path,
+                    )
+                    for reference in references
+                ),
+            )
+        applied_references.extend(reference.raw_path for reference in references)
+        return UpdateReport(
+            dry_run=False,
+            results=tuple(
+                UpdateResult(
+                    status="changed",
+                    old_path=reference.raw_path,
+                    new_path=reference.raw_path.replace("old_show", "new_show"),
+                    parm_path=reference.parm_path,
+                )
+                for reference in references
+            ),
+        )
+
+    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(relinker_window, "scan", lambda: None)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+    relinker_window.search_edit.setText("no rows visible")
+
+    relinker_window.apply_replace()
+
+    assert applied_references == [
+        "P:/old_show/cache/a.bgeo.sc",
+        "P:/old_show/cache/b.bgeo.sc",
     ]

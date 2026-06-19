@@ -13,6 +13,7 @@ from houdini_asset_relinker import __version__
 from houdini_asset_relinker.export import write_references_csv
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
+from houdini_asset_relinker.path_utils import normalize_for_compare
 from houdini_asset_relinker.qt import QtCore, QtWidgets
 from houdini_asset_relinker.scanner import scan_assets
 from houdini_asset_relinker.ui.houdini import (
@@ -45,6 +46,11 @@ from houdini_asset_relinker.updater import replace_hda_library_paths, replace_pa
 
 WINDOW_OBJECT_NAME = "houdiniAssetRelinkerWindow"
 REFERENCE_PATH_FAMILY_COLUMN = 4
+SCOPE_VISIBLE_ROWS = "visible_rows"
+SCOPE_SELECTED_ROW = "selected_row"
+SCOPE_PATH_FAMILY = "path_family"
+SCOPE_MISSING_UNDER_ROOT = "missing_under_root"
+SCOPE_ALL_ROWS = "all_rows"
 _WINDOW: Optional[AssetRelinkerWindow] = None
 
 
@@ -57,6 +63,7 @@ class ReplaceRequest:
     case_sensitive: bool
     include_hda_libraries: bool
     uninstall_old_hda_libraries: bool
+    scope: str
 
 
 class AssetRelinkerWindow(QtWidgets.QMainWindow):
@@ -74,6 +81,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._report_model = UpdateResultTableModel(self)
         self._preview_report: Optional[UpdateReport] = None
         self._preview_request: Optional[ReplaceRequest] = None
+        self._preview_references: tuple[AssetReference, ...] = ()
         self._current_report: Optional[UpdateReport] = None
 
         self._build_actions()
@@ -110,9 +118,14 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         if not request.find_text:
             self._warn("Find text cannot be empty.")
             return
-        references = self._reference_model.references()
-        if not references:
+        if not self._reference_model.references():
             self._warn("Scan the scene before previewing replacements.")
+            return
+        references = self._resolve_replace_references(request)
+        if not references:
+            self._warn(
+                f"No references match the selected relink scope: {_scope_label(request.scope)}."
+            )
             return
 
         self._set_busy(True)
@@ -126,6 +139,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         self._preview_report = report
         self._preview_request = request
+        self._preview_references = tuple(references)
         self._current_report = report
         self._report_model.set_report(report)
         self.apply_button.setEnabled(bool(report.results))
@@ -160,12 +174,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         if answer != MESSAGE_OK:
             return
 
-        references = self._reference_model.references()
         self._set_busy(True)
         try:
             report = self._build_replace_report(
                 preview_request,
-                references,
+                self._preview_references,
                 dry_run=False,
             )
         except Exception as error:
@@ -176,6 +189,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         self._preview_report = None
         self._preview_request = None
+        self._preview_references = ()
         self.scan()
         self._current_report = report
         self._report_model.set_report(report)
@@ -435,8 +449,17 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.replace_edit = QtWidgets.QLineEdit(self)
         self.replace_edit.setPlaceholderText("P:/new_show or $HIP/assets")
         self.replace_edit.setToolTip("Replacement text to write into matching references.")
+        self.scope_combo = QtWidgets.QComboBox(self)
+        self.scope_combo.setMinimumWidth(190)
+        self.scope_combo.setToolTip("Limit preview and apply to a safer subset of scanned rows.")
+        self.scope_combo.addItem("Visible filtered rows", SCOPE_VISIBLE_ROWS)
+        self.scope_combo.addItem("Selected row", SCOPE_SELECTED_ROW)
+        self.scope_combo.addItem("Selected path family", SCOPE_PATH_FAMILY)
+        self.scope_combo.addItem("Missing under Find root", SCOPE_MISSING_UNDER_ROOT)
+        self.scope_combo.addItem("All scanned rows", SCOPE_ALL_ROWS)
         form.addRow("Find", self.find_edit)
         form.addRow("Replace with", self.replace_edit)
+        form.addRow("Scope", self.scope_combo)
         layout.addLayout(form)
 
         self.case_sensitive_check = QtWidgets.QCheckBox("Case sensitive", self)
@@ -523,6 +546,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self.case_sensitive_check.toggled,
             self.include_hda_replace_check.toggled,
             self.uninstall_old_hda_check.toggled,
+            self.scope_combo.currentIndexChanged,
         ):
             signal.connect(self._invalidate_preview)
 
@@ -623,7 +647,43 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             case_sensitive=self.case_sensitive_check.isChecked(),
             include_hda_libraries=self.include_hda_replace_check.isChecked(),
             uninstall_old_hda_libraries=self.uninstall_old_hda_check.isChecked(),
+            scope=self.scope_combo.currentData(),
         )
+
+    def _resolve_replace_references(self, request: ReplaceRequest) -> list[AssetReference]:
+        """Return the scanned references targeted by the selected relink scope."""
+        if request.scope == SCOPE_SELECTED_ROW:
+            selected = self._selected_reference()
+            return [selected] if selected is not None else []
+        if request.scope == SCOPE_VISIBLE_ROWS:
+            return self._visible_references()
+        if request.scope == SCOPE_PATH_FAMILY:
+            selected = self._selected_reference()
+            if selected is None:
+                return []
+            return [
+                reference
+                for reference in self._reference_model.references()
+                if reference.path_family == selected.path_family
+            ]
+        if request.scope == SCOPE_MISSING_UNDER_ROOT:
+            return [
+                reference
+                for reference in self._reference_model.references()
+                if reference.can_update
+                and (not reference.exists or reference.missing_variables)
+                and _path_is_under_or_equal(reference.raw_path, request.find_text)
+            ]
+        return self._reference_model.references()
+
+    def _visible_references(self) -> list[AssetReference]:
+        """Return references accepted by the current proxy filters in proxy order."""
+        references = []
+        for row in range(self._proxy_model.rowCount()):
+            proxy_index = self._proxy_model.index(row, 0)
+            source_index = self._proxy_model.mapToSource(proxy_index)
+            references.append(self._reference_model.reference_at(source_index.row()))
+        return references
 
     def _build_replace_report(
         self,
@@ -658,6 +718,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             return
         self._preview_report = None
         self._preview_request = None
+        self._preview_references = ()
         self._current_report = None
         self._report_model.set_report(None)
         self.apply_button.setEnabled(False)
@@ -667,6 +728,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _clear_report(self) -> None:
         self._preview_report = None
         self._preview_request = None
+        self._preview_references = ()
         self._current_report = None
         self._report_model.set_report(None)
         self.apply_button.setEnabled(False)
@@ -762,6 +824,27 @@ def _reference_note_text(reference: AssetReference) -> str:
     if reference.missing_variables:
         return f"Undefined variables: {', '.join(reference.missing_variables)}"
     return reference.reason or ""
+
+
+def _path_is_under_or_equal(path_value: str, root_value: str) -> bool:
+    """Return whether a raw path is exactly at or under a root value."""
+    normalized_path = normalize_for_compare(path_value)
+    normalized_root = normalize_for_compare(root_value)
+    if not normalized_path or not normalized_root:
+        return False
+    return normalized_path == normalized_root or normalized_path.startswith(f"{normalized_root}/")
+
+
+def _scope_label(scope: str) -> str:
+    """Return a user-facing label for a relink scope id."""
+    labels = {
+        SCOPE_VISIBLE_ROWS: "Visible filtered rows",
+        SCOPE_SELECTED_ROW: "Selected row",
+        SCOPE_PATH_FAMILY: "Selected path family",
+        SCOPE_MISSING_UNDER_ROOT: "Missing under Find root",
+        SCOPE_ALL_ROWS: "All scanned rows",
+    }
+    return labels.get(scope, scope)
 
 
 if __name__ == "__main__":

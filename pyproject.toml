@@ -1,6 +1,6 @@
 [project]
 name = "houdini-asset-relinker"
-version = "0.1.0"
+version = "0.3.0"
 description = "Houdini HOM utility to scan and relink external asset paths in a hip file."
 readme = "README.md"
 requires-python = ">=3.9"

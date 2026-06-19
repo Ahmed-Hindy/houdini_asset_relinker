@@ -118,8 +118,8 @@ print(report.to_text())
 For standalone interface design/development outside Houdini, install the optional PySide6 dependencies:
 
 ```powershell
-uv --system-certs sync --extra pyside6
-uv --system-certs run --extra pyside6 houdini-asset-relinker
+uv sync --extra pyside6
+uv run --extra pyside6 houdini-asset-relinker
 ```
 
 > [!NOTE]
@@ -133,14 +133,14 @@ We use `uv` for python tooling.
 
 ```powershell
 # Sync workspace environment
-uv --system-certs sync
+uv sync
 
 # Check code formatting & linting
-uv --system-certs run ruff check .
-uv --system-certs run ruff format .
+uv run ruff check .
+uv run ruff format .
 
 # Run pytest suite
-uv --system-certs run python -m pytest
+uv run python -m pytest
 ```
 
 ---

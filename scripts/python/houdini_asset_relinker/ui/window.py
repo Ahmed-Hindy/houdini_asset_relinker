@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from houdini_asset_relinker import __version__
 from houdini_asset_relinker.export import write_references_csv
 from houdini_asset_relinker.hou_access import get_hou
 from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
-from houdini_asset_relinker.qt import QT_BACKEND_NAME, QtCore, QtWidgets
+from houdini_asset_relinker.qt import QtCore, QtWidgets
 from houdini_asset_relinker.scanner import scan_assets
 from houdini_asset_relinker.ui.houdini import (
     default_export_path,
@@ -64,7 +65,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName(WINDOW_OBJECT_NAME)
-        self.setWindowTitle(f"Asset Relinker - {QT_BACKEND_NAME}")
+        self.setWindowTitle(f"Asset Relinker {__version__}")
         self.resize(1280, 760)
 
         self._reference_model = ReferenceTableModel(self)

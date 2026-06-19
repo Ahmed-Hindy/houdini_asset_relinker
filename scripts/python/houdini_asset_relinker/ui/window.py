@@ -40,7 +40,6 @@ from houdini_asset_relinker.ui.table_models import (
     ReferenceTableModel,
     UpdateResultTableModel,
 )
-from houdini_asset_relinker.ui.widgets import StatWidget
 from houdini_asset_relinker.updater import replace_hda_library_paths, replace_path_text
 
 WINDOW_OBJECT_NAME = "houdiniAssetRelinkerWindow"
@@ -136,10 +135,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def apply_replace(self) -> None:
         """Apply the last previewed replacement after confirmation."""
+        preview_request = self._preview_request
         if self._preview_report is None or not self._preview_report.results:
             self._warn("Preview replacements before applying changes.")
             return
-        if self._preview_request != self._current_replace_request():
+        if preview_request != self._current_replace_request():
             self._invalidate_preview()
             self._warn("Replacement settings changed. Preview the relink again before applying.")
             return
@@ -162,7 +162,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._set_busy(True)
         try:
             report = self._build_replace_report(
-                self._preview_request,
+                preview_request,
                 references,
                 dry_run=False,
             )
@@ -278,7 +278,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         main_layout.setSpacing(10)
 
         main_layout.addWidget(self._build_scan_bar())
-        main_layout.addWidget(self._build_summary_row())
 
         self.main_splitter = QtWidgets.QSplitter(self)
         self.main_splitter.addWidget(self._build_reference_panel())
@@ -292,98 +291,47 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _build_scan_bar(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QWidget(self)
-        layout = QtWidgets.QVBoxLayout(panel)
+        panel.setObjectName("scanBar")
+        layout = QtWidgets.QHBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
         self.project_variable_edit = QtWidgets.QLineEdit("HIP", self)
         self.project_variable_edit.setMaximumWidth(90)
         self.project_variable_edit.setToolTip(
             "Houdini project variable passed to hou.fileReferences, usually HIP."
         )
-        self.include_all_refs_check = QtWidgets.QCheckBox("All refs", self)
+        self.include_all_refs_check = QtWidgets.QCheckBox("All file refs", self)
         self.include_all_refs_check.setChecked(True)
         self.include_all_refs_check.setToolTip(
             "Include all Houdini file references instead of only selected references."
         )
-        self.include_hda_check = QtWidgets.QCheckBox("HDA libraries", self)
+        self.include_hda_check = QtWidgets.QCheckBox("Loaded HDA libraries", self)
         self.include_hda_check.setChecked(True)
         self.include_hda_check.setToolTip("Include loaded HDA library files in the scan.")
-        self.recurse_locked_check = QtWidgets.QCheckBox("Inside locked nodes", self)
+        self.recurse_locked_check = QtWidgets.QCheckBox("Locked-node contents", self)
         self.recurse_locked_check.setChecked(False)
         self.recurse_locked_check.setToolTip(
             "Inspect child nodes inside locked assets when scanning file references."
         )
 
         self.scan_button = QtWidgets.QPushButton("Scan Scene", self)
+        self.scan_button.setObjectName("primaryButton")
         self.scan_button.setDefault(True)
         self.scan_button.setMinimumWidth(92)
         self.scan_button.setShortcut("F5")
         self.scan_button.setToolTip("Scan the current Houdini scene for external asset references.")
-        self.export_button = QtWidgets.QPushButton("Export CSV", self)
-        self.export_button.setMinimumWidth(92)
-        self.export_button.setToolTip("Export the current reference table to a CSV report.")
 
-        self.search_edit = QtWidgets.QLineEdit(self)
-        self.search_edit.setMinimumWidth(280)
-        self.search_edit.setPlaceholderText("Filter by node, parameter, path, or note")
-        self.search_edit.setToolTip("Filter references by node, parameter, path, kind, or note.")
-        self.missing_only_check = QtWidgets.QCheckBox("Missing only", self)
-        self.missing_only_check.setToolTip("Show only references whose expanded paths are missing.")
-        self.writable_only_check = QtWidgets.QCheckBox("Writable only", self)
-        self.writable_only_check.setToolTip("Show only references the relinker can update.")
-        self.kind_combo = QtWidgets.QComboBox(self)
-        self.kind_combo.setMinimumWidth(112)
-        self.kind_combo.setToolTip("Limit the table to a specific reference kind.")
-        self.kind_combo.addItem("All kinds", "all")
-        self.kind_combo.addItem("File parameters", "file")
-        self.kind_combo.addItem("HDA libraries", "hda")
-
-        scan_row = QtWidgets.QHBoxLayout()
-        scan_row.setContentsMargins(0, 0, 0, 0)
-        scan_row.setSpacing(8)
-        scan_row.addWidget(QtWidgets.QLabel("Project var", self))
-        scan_row.addWidget(self.project_variable_edit)
-        scan_row.addWidget(self.include_all_refs_check)
-        scan_row.addWidget(self.include_hda_check)
-        scan_row.addWidget(self.recurse_locked_check)
-        scan_row.addStretch(1)
-        scan_row.addWidget(self.scan_button)
-        scan_row.addWidget(self.export_button)
-
-        filter_row = QtWidgets.QHBoxLayout()
-        filter_row.setContentsMargins(0, 0, 0, 0)
-        filter_row.setSpacing(8)
-        filter_row.addWidget(QtWidgets.QLabel("Filter", self))
-        filter_row.addWidget(self.search_edit, 1)
-        filter_row.addWidget(self.missing_only_check)
-        filter_row.addWidget(self.writable_only_check)
-        filter_row.addWidget(self.kind_combo)
-
-        layout.addLayout(scan_row)
-        layout.addLayout(filter_row)
-        return panel
-
-    def _build_summary_row(self) -> QtWidgets.QWidget:
-        panel = QtWidgets.QWidget(self)
-        layout = QtWidgets.QHBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-
-        self.total_stat = StatWidget("Total", "0", self)
-        self.missing_stat = StatWidget("Missing", "0", self)
-        self.writable_stat = StatWidget("Writable", "0", self)
-        self.hda_stat = StatWidget("HDA", "0", self)
-        self.visible_stat = StatWidget("Visible", "0", self)
-        for widget in (
-            self.total_stat,
-            self.missing_stat,
-            self.writable_stat,
-            self.hda_stat,
-            self.visible_stat,
-        ):
-            layout.addWidget(widget)
+        section_label = QtWidgets.QLabel("Scene scan", self)
+        section_label.setObjectName("sectionLabel")
+        layout.addWidget(section_label)
+        layout.addWidget(QtWidgets.QLabel("Project var", self))
+        layout.addWidget(self.project_variable_edit)
+        layout.addWidget(self.include_all_refs_check)
+        layout.addWidget(self.include_hda_check)
+        layout.addWidget(self.recurse_locked_check)
         layout.addStretch(1)
+        layout.addWidget(self.scan_button)
         return panel
 
     def _build_reference_panel(self) -> QtWidgets.QWidget:
@@ -391,6 +339,56 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+
+        self.search_edit = QtWidgets.QLineEdit(self)
+        self.search_edit.setMinimumWidth(260)
+        self.search_edit.setPlaceholderText("Filter by node, parameter, path, or note")
+        self.search_edit.setToolTip("Filter references by node, parameter, path, kind, or note.")
+        self.missing_only_check = QtWidgets.QCheckBox("Missing only", self)
+        self.missing_only_check.setToolTip("Show only references whose expanded paths are missing.")
+        self.missing_only_check.setChecked(True)
+        self.writable_only_check = QtWidgets.QCheckBox("Writable only", self)
+        self.writable_only_check.setToolTip("Show only references the relinker can update.")
+        self.writable_only_check.setChecked(True)
+        self.kind_combo = QtWidgets.QComboBox(self)
+        self.kind_combo.setMinimumWidth(112)
+        self.kind_combo.setToolTip("Limit the table to a specific reference kind.")
+        self.kind_combo.addItem("All kinds", "all")
+        self.kind_combo.addItem("File parameters", "file")
+        self.kind_combo.addItem("HDA libraries", "hda")
+        self.reset_filters_button = QtWidgets.QPushButton("Reset", self)
+        self.reset_filters_button.setObjectName("secondaryButton")
+        self.reset_filters_button.setToolTip("Clear table filters.")
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(8)
+        filter_label = QtWidgets.QLabel("References", self)
+        filter_label.setObjectName("sectionLabel")
+        filter_row.addWidget(filter_label)
+        filter_row.addWidget(self.search_edit, 1)
+        filter_row.addWidget(self.missing_only_check)
+        filter_row.addWidget(self.writable_only_check)
+        filter_row.addWidget(self.kind_combo)
+        filter_row.addWidget(self.reset_filters_button)
+        layout.addLayout(filter_row)
+
+        table_action_row = QtWidgets.QHBoxLayout()
+        table_action_row.setContentsMargins(0, 0, 0, 0)
+        table_action_row.setSpacing(8)
+        self.summary_label = QtWidgets.QLabel(
+            "0 total | 0 missing | 0 writable | 0 HDA | 0 visible",
+            self,
+        )
+        self.summary_label.setObjectName("summaryLabel")
+        self.export_button = QtWidgets.QPushButton("Export CSV", self)
+        self.export_button.setObjectName("secondaryButton")
+        self.export_button.setEnabled(False)
+        self.export_button.setToolTip("Export the current reference table to a CSV report.")
+        table_action_row.addWidget(self.summary_label, 1)
+        table_action_row.addWidget(self.export_button)
+        layout.addLayout(table_action_row)
+
         self.reference_table = QtWidgets.QTableView(self)
         self.reference_table.setModel(self._proxy_model)
         self.reference_table.setSortingEnabled(True)
@@ -417,7 +415,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _build_side_panel(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QTabWidget(self)
         panel.addTab(self._build_replace_panel(), "Relink")
-        panel.addTab(self._build_details_panel(), "Details")
+        panel.addTab(self._build_details_panel(), "Selected Reference")
         return panel
 
     def _build_replace_panel(self) -> QtWidgets.QWidget:
@@ -457,8 +455,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         button_row = QtWidgets.QHBoxLayout()
         self.preview_button = QtWidgets.QPushButton("Preview", self)
+        self.preview_button.setObjectName("primaryButton")
         self.preview_button.setToolTip("Preview relink changes without modifying the scene.")
         self.apply_button = QtWidgets.QPushButton("Apply", self)
+        self.apply_button.setObjectName("applyButton")
         self.apply_button.setEnabled(False)
         self.apply_button.setToolTip("Apply the latest previewed relink changes.")
         self.copy_report_button = QtWidgets.QPushButton("Copy Report", self)
@@ -499,6 +499,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.select_node_action.triggered.connect(self.select_selected_node)
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
+        self.reset_filters_button.clicked.connect(self._reset_reference_filters)
         self.preview_button.clicked.connect(self.preview_replace)
         self.apply_button.clicked.connect(self.apply_replace)
         self.copy_report_button.clicked.connect(self.copy_report)
@@ -530,6 +531,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _kind_filter_changed(self, *_args: object) -> None:
         self._proxy_model.set_kind_filter(self.kind_combo.currentData())
         self._update_summary()
+
+    def _reset_reference_filters(self) -> None:
+        self.search_edit.clear()
+        self.missing_only_check.setChecked(True)
+        self.writable_only_check.setChecked(True)
+        self.kind_combo.setCurrentIndex(0)
 
     def _selection_changed(self, *_args: object) -> None:
         reference = self._selected_reference()
@@ -579,13 +586,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _update_summary(self, *_args: object) -> None:
         references = self._reference_model.references()
-        self.total_stat.set_value(len(references))
-        self.missing_stat.set_value(sum(not reference.exists for reference in references))
-        self.writable_stat.set_value(sum(reference.can_update for reference in references))
-        self.hda_stat.set_value(
-            sum(reference.kind == ReferenceKind.HDA_LIBRARY for reference in references)
+        missing_count = sum(not reference.exists for reference in references)
+        writable_count = sum(reference.can_update for reference in references)
+        hda_count = sum(reference.kind == ReferenceKind.HDA_LIBRARY for reference in references)
+        self.summary_label.setText(
+            f"{len(references)} total | {missing_count} missing | "
+            f"{writable_count} writable | {hda_count} HDA | "
+            f"{self._proxy_model.rowCount()} visible"
         )
-        self.visible_stat.set_value(self._proxy_model.rowCount())
+        self.export_button.setEnabled(bool(references))
 
     def _current_replace_request(self) -> ReplaceRequest:
         return ReplaceRequest(
@@ -647,7 +656,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.setCursor(WAIT_CURSOR if busy else ARROW_CURSOR)
         self.scan_button.setEnabled(not busy)
         self.preview_button.setEnabled(not busy)
-        self.export_button.setEnabled(not busy)
+        self.export_button.setEnabled(not busy and bool(self._reference_model.references()))
 
     def _set_status(self, text: str) -> None:
         self.status_label.setText(text)

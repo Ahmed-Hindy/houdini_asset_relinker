@@ -1,0 +1,119 @@
+"""Tests for the asset relinker Qt window workflow."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+pytest.importorskip("PySide6")
+
+from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
+from houdini_asset_relinker.ui import window as window_module
+from houdini_asset_relinker.ui.window import AssetRelinkerWindow, ReplaceRequest
+
+
+@pytest.fixture
+def qt_app():
+    """Return a QApplication for offscreen widget tests."""
+    app = window_module.QtWidgets.QApplication.instance()
+    if app is None:
+        app = window_module.QtWidgets.QApplication([])
+    return app
+
+
+@pytest.fixture
+def relinker_window(qt_app):
+    """Create and close an asset relinker window for each test."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    relinker._reference_model.set_references(
+        [
+            AssetReference(
+                kind=ReferenceKind.FILE_PARAMETER,
+                raw_path="P:/old_show/cache/a.bgeo.sc",
+                expanded_path="P:/old_show/cache/a.bgeo.sc",
+                exists=False,
+                parm_path="/obj/geo1/file1/file",
+                node_path="/obj/geo1",
+                can_update=True,
+            )
+        ]
+    )
+    yield relinker
+    relinker.close()
+
+
+def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
+    """It disables Apply when replacement settings diverge from the preview."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+
+    relinker_window.preview_replace()
+
+    assert relinker_window.apply_button.isEnabled()
+    assert relinker_window._preview_request == ReplaceRequest(
+        find_text="P:/old_show",
+        replace_with="P:/new_show",
+        case_sensitive=True,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+    )
+    assert relinker_window._report_model.rowCount() == 1
+
+    relinker_window.find_edit.setText("P:/other_show")
+
+    assert relinker_window._preview_report is None
+    assert relinker_window._preview_request is None
+    assert not relinker_window.apply_button.isEnabled()
+    assert relinker_window._report_model.rowCount() == 0
+
+
+def test_apply_uses_the_stored_preview_request(monkeypatch, relinker_window) -> None:
+    """It applies the request that produced the preview."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    relinker_window.preview_replace()
+
+    captured_requests: list[ReplaceRequest] = []
+
+    def fake_build_replace_report(
+        request: ReplaceRequest,
+        references: list[AssetReference],
+        dry_run: bool,
+    ) -> UpdateReport:
+        del references
+        assert not dry_run
+        captured_requests.append(request)
+        return UpdateReport(
+            dry_run=False,
+            results=(
+                UpdateResult(
+                    status="changed",
+                    old_path="P:/old_show/cache/a.bgeo.sc",
+                    new_path="P:/new_show/cache/a.bgeo.sc",
+                    parm_path="/obj/geo1/file1/file",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(relinker_window, "scan", lambda: None)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    assert captured_requests == [
+        ReplaceRequest(
+            find_text="P:/old_show",
+            replace_with="P:/new_show",
+            case_sensitive=True,
+            include_hda_libraries=False,
+            uninstall_old_hda_libraries=False,
+        )
+    ]

@@ -87,7 +87,7 @@ wheels = [
 [[package]]
 name = "houdini-asset-relinker"
 version = "0.3.0"
-source = { editable = "." }
+source = { virtual = "." }
 
 [package.optional-dependencies]
 pyside6 = [

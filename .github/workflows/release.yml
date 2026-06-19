@@ -1,0 +1,60 @@
+name: Release artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-artifacts:
+    name: Build Houdini package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_version=""
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            expected_version="${GITHUB_REF_NAME#v}"
+          fi
+          args=()
+          if [[ -n "${expected_version}" ]]; then
+            args+=(--expected-version "${expected_version}")
+          fi
+          python scripts/build_release_artifact.py --out-dir dist "${args[@]}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: houdini-asset-relinker-release
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+      - name: Publish GitHub release assets
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" dist/*.zip dist/*.sha256 --clobber
+          else
+            gh release create "${TAG_NAME}" dist/*.zip dist/*.sha256 --title "${TAG_NAME}" --generate-notes
+          fi

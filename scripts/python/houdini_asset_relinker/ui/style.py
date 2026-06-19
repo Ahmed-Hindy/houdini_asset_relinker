@@ -6,16 +6,6 @@ QMainWindow, QWidget {
     color: #e8eaed;
     font-size: 10pt;
 }
-QToolBar {
-    background: #292d31;
-    border: 0;
-    spacing: 6px;
-    padding: 5px;
-}
-QToolBar QToolButton {
-    min-width: 120px;
-    padding: 7px 12px;
-}
 QLineEdit, QPlainTextEdit, QComboBox {
     background: #16181b;
     border: 1px solid #3c4248;

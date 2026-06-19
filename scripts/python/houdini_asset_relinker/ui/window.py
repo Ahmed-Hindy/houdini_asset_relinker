@@ -292,9 +292,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _build_scan_bar(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QWidget(self)
-        layout = QtWidgets.QHBoxLayout(panel)
+        layout = QtWidgets.QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
 
         self.project_variable_edit = QtWidgets.QLineEdit("HIP", self)
         self.project_variable_edit.setMaximumWidth(90)
@@ -325,6 +325,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.export_button.setToolTip("Export the current reference table to a CSV report.")
 
         self.search_edit = QtWidgets.QLineEdit(self)
+        self.search_edit.setMinimumWidth(280)
         self.search_edit.setPlaceholderText("Filter by node, parameter, path, or note")
         self.search_edit.setToolTip("Filter references by node, parameter, path, kind, or note.")
         self.missing_only_check = QtWidgets.QCheckBox("Missing only", self)
@@ -332,23 +333,35 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.writable_only_check = QtWidgets.QCheckBox("Writable only", self)
         self.writable_only_check.setToolTip("Show only references the relinker can update.")
         self.kind_combo = QtWidgets.QComboBox(self)
+        self.kind_combo.setMinimumWidth(112)
         self.kind_combo.setToolTip("Limit the table to a specific reference kind.")
         self.kind_combo.addItem("All kinds", "all")
         self.kind_combo.addItem("File parameters", "file")
         self.kind_combo.addItem("HDA libraries", "hda")
 
-        layout.addWidget(QtWidgets.QLabel("Project var", self))
-        layout.addWidget(self.project_variable_edit)
-        layout.addWidget(self.include_all_refs_check)
-        layout.addWidget(self.include_hda_check)
-        layout.addWidget(self.recurse_locked_check)
-        layout.addWidget(self.scan_button)
-        layout.addWidget(self.export_button)
-        layout.addSpacing(12)
-        layout.addWidget(self.search_edit, 1)
-        layout.addWidget(self.missing_only_check)
-        layout.addWidget(self.writable_only_check)
-        layout.addWidget(self.kind_combo)
+        scan_row = QtWidgets.QHBoxLayout()
+        scan_row.setContentsMargins(0, 0, 0, 0)
+        scan_row.setSpacing(8)
+        scan_row.addWidget(QtWidgets.QLabel("Project var", self))
+        scan_row.addWidget(self.project_variable_edit)
+        scan_row.addWidget(self.include_all_refs_check)
+        scan_row.addWidget(self.include_hda_check)
+        scan_row.addWidget(self.recurse_locked_check)
+        scan_row.addStretch(1)
+        scan_row.addWidget(self.scan_button)
+        scan_row.addWidget(self.export_button)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(8)
+        filter_row.addWidget(QtWidgets.QLabel("Filter", self))
+        filter_row.addWidget(self.search_edit, 1)
+        filter_row.addWidget(self.missing_only_check)
+        filter_row.addWidget(self.writable_only_check)
+        filter_row.addWidget(self.kind_combo)
+
+        layout.addLayout(scan_row)
+        layout.addLayout(filter_row)
         return panel
 
     def _build_summary_row(self) -> QtWidgets.QWidget:

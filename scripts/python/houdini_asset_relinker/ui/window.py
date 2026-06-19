@@ -32,7 +32,6 @@ from houdini_asset_relinker.ui.qt_constants import (
     MESSAGE_OK,
     SELECT_ROWS,
     SINGLE_SELECTION,
-    TOOL_BUTTON_TEXT_ONLY,
     WAIT_CURSOR,
 )
 from houdini_asset_relinker.ui.style import ASSET_RELINKER_STYLESHEET
@@ -89,6 +88,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                 project_dir_variable=self.project_variable_edit.text().strip() or "HIP",
                 include_all_refs=self.include_all_refs_check.isChecked(),
                 include_hda_libraries=self.include_hda_check.isChecked(),
+                recurse_in_locked_nodes=self.recurse_locked_check.isChecked(),
             )
         except Exception as error:
             self._show_error("Scan failed", error)
@@ -128,7 +128,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._current_report = report
         self._report_model.set_report(report)
         self.apply_button.setEnabled(bool(report.results))
-        self.copy_report_action.setEnabled(bool(report.results))
+        self.copy_report_button.setEnabled(bool(report.results))
         self._set_status(
             f"Preview found {report.changed_count} planned changes, "
             f"{report.skipped_count} skipped, {report.failed_count} failed."
@@ -178,7 +178,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._current_report = report
         self._report_model.set_report(report)
         self.apply_button.setEnabled(False)
-        self.copy_report_action.setEnabled(bool(report.results))
+        self.copy_report_button.setEnabled(bool(report.results))
         self._set_status(
             f"Applied {report.changed_count} changes, "
             f"{report.skipped_count} skipped, {report.failed_count} failed."
@@ -256,15 +256,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._set_status("Copied update report to clipboard.")
 
     def _build_actions(self) -> None:
-        self.scan_action = ACTION_CLASS("Scan", self)
-        self.scan_action.setToolTip("Scan the current Houdini scene for external asset references.")
-        self.scan_action.setStatusTip(
-            "Scan the current Houdini scene for external asset references."
-        )
-        self.scan_action.setShortcut("F5")
-        self.export_action = ACTION_CLASS("Export CSV", self)
-        self.export_action.setToolTip("Export the current reference table to a CSV report.")
-        self.export_action.setStatusTip("Export the current reference table to a CSV report.")
         self.copy_path_action = ACTION_CLASS("Copy Raw Path", self)
         self.copy_path_action.setToolTip("Copy the selected reference's raw path expression.")
         self.copy_path_action.setStatusTip("Copy the selected reference's raw path expression.")
@@ -278,24 +269,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.select_node_action.setStatusTip(
             "Jump the Network Editor to the selected reference's node and select it."
         )
-        self.copy_report_action = ACTION_CLASS("Copy Report", self)
-        self.copy_report_action.setToolTip("Copy the latest preview or apply report.")
-        self.copy_report_action.setStatusTip("Copy the latest preview or apply report.")
-        self.copy_report_action.setEnabled(False)
 
     def _build_ui(self) -> None:
-        toolbar = self.addToolBar("Asset Relinker")
-        toolbar.setMovable(False)
-        toolbar.setToolButtonStyle(TOOL_BUTTON_TEXT_ONLY)
-        toolbar.addAction(self.scan_action)
-        toolbar.addAction(self.export_action)
-        toolbar.addSeparator()
-        toolbar.addAction(self.copy_path_action)
-        toolbar.addAction(self.reveal_action)
-        toolbar.addAction(self.select_node_action)
-        toolbar.addSeparator()
-        toolbar.addAction(self.copy_report_action)
-
         central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(central_widget)
         main_layout = QtWidgets.QVBoxLayout(central_widget)
@@ -334,10 +309,16 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.include_hda_check = QtWidgets.QCheckBox("HDA libraries", self)
         self.include_hda_check.setChecked(True)
         self.include_hda_check.setToolTip("Include loaded HDA library files in the scan.")
+        self.recurse_locked_check = QtWidgets.QCheckBox("Inside locked nodes", self)
+        self.recurse_locked_check.setChecked(False)
+        self.recurse_locked_check.setToolTip(
+            "Inspect child nodes inside locked assets when scanning file references."
+        )
 
         self.scan_button = QtWidgets.QPushButton("Scan Scene", self)
         self.scan_button.setDefault(True)
         self.scan_button.setMinimumWidth(92)
+        self.scan_button.setShortcut("F5")
         self.scan_button.setToolTip("Scan the current Houdini scene for external asset references.")
         self.export_button = QtWidgets.QPushButton("Export CSV", self)
         self.export_button.setMinimumWidth(92)
@@ -360,6 +341,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.project_variable_edit)
         layout.addWidget(self.include_all_refs_check)
         layout.addWidget(self.include_hda_check)
+        layout.addWidget(self.recurse_locked_check)
         layout.addWidget(self.scan_button)
         layout.addWidget(self.export_button)
         layout.addSpacing(12)
@@ -466,8 +448,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.apply_button = QtWidgets.QPushButton("Apply", self)
         self.apply_button.setEnabled(False)
         self.apply_button.setToolTip("Apply the latest previewed relink changes.")
+        self.copy_report_button = QtWidgets.QPushButton("Copy Report", self)
+        self.copy_report_button.setEnabled(False)
+        self.copy_report_button.setToolTip("Copy the latest preview or apply report.")
         button_row.addWidget(self.preview_button)
         button_row.addWidget(self.apply_button)
+        button_row.addWidget(self.copy_report_button)
         layout.addLayout(button_row)
 
         self.report_table = QtWidgets.QTableView(self)
@@ -495,16 +481,14 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         return panel
 
     def _connect_signals(self) -> None:
-        self.scan_action.triggered.connect(self.scan)
-        self.export_action.triggered.connect(self.export_csv)
         self.copy_path_action.triggered.connect(self.copy_selected_reference_path)
         self.reveal_action.triggered.connect(self.reveal_selected_reference)
         self.select_node_action.triggered.connect(self.select_selected_node)
-        self.copy_report_action.triggered.connect(self.copy_report)
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
         self.preview_button.clicked.connect(self.preview_replace)
         self.apply_button.clicked.connect(self.apply_replace)
+        self.copy_report_button.clicked.connect(self.copy_report)
         self.search_edit.textChanged.connect(self._proxy_model.set_search_text)
         self.search_edit.textChanged.connect(self._update_summary)
         self.missing_only_check.toggled.connect(self._proxy_model.set_show_missing_only)
@@ -513,6 +497,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.writable_only_check.toggled.connect(self._update_summary)
         self.kind_combo.currentIndexChanged.connect(self._kind_filter_changed)
         self.reference_table.customContextMenuRequested.connect(self._show_reference_menu)
+        self.reference_table.doubleClicked.connect(self._reference_double_clicked)
 
         for signal in (
             self.find_edit.textChanged,
@@ -564,14 +549,19 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         source_index = self._proxy_model.mapToSource(proxy_index)
         return self._reference_model.reference_at(source_index.row())
 
+    def _reference_double_clicked(self, index: QtCore.QModelIndex) -> None:
+        if index.isValid():
+            self.reference_table.selectRow(index.row())
+        self.select_selected_node()
+
     def _show_reference_menu(self, position: QtCore.QPoint) -> None:
         clicked_index = self.reference_table.indexAt(position)
         if clicked_index.isValid():
             self.reference_table.selectRow(clicked_index.row())
         menu = QtWidgets.QMenu(self)
+        menu.addAction(self.select_node_action)
         menu.addAction(self.copy_path_action)
         menu.addAction(self.reveal_action)
-        menu.addAction(self.select_node_action)
         _exec_dialog(menu, self.reference_table.viewport().mapToGlobal(position))
 
     def _update_summary(self, *_args: object) -> None:
@@ -629,7 +619,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._current_report = None
         self._report_model.set_report(None)
         self.apply_button.setEnabled(False)
-        self.copy_report_action.setEnabled(False)
+        self.copy_report_button.setEnabled(False)
         self._set_status("Replacement settings changed. Preview again before applying.")
 
     def _clear_report(self) -> None:
@@ -638,7 +628,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._current_report = None
         self._report_model.set_report(None)
         self.apply_button.setEnabled(False)
-        self.copy_report_action.setEnabled(False)
+        self.copy_report_button.setEnabled(False)
 
     def _set_busy(self, busy: bool) -> None:
         self.setCursor(WAIT_CURSOR if busy else ARROW_CURSOR)

@@ -14,7 +14,6 @@ CUSTOM_CONTEXT_MENU = qt_enum("ContextMenuPolicy", "CustomContextMenu")
 ASCENDING_ORDER = qt_enum("SortOrder", "AscendingOrder")
 WAIT_CURSOR = qt_enum("CursorShape", "WaitCursor")
 ARROW_CURSOR = qt_enum("CursorShape", "ArrowCursor")
-TOOL_BUTTON_TEXT_ONLY = qt_enum("ToolButtonStyle", "ToolButtonTextOnly")
 INVALID_INDEX = QtCore.QModelIndex()
 
 try:

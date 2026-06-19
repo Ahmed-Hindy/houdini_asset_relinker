@@ -13,6 +13,7 @@ def scan_assets(
     project_dir_variable: str = "HIP",
     include_all_refs: bool = True,
     include_hda_libraries: bool = True,
+    recurse_in_locked_nodes: bool = False,
 ) -> list[AssetReference]:
     """Scan the current Houdini session for external asset references.
 
@@ -20,11 +21,16 @@ def scan_assets(
         project_dir_variable: Houdini variable name used by `hou.fileReferences` to shorten paths.
         include_all_refs: Whether Houdini should include all refs or only selected refs.
         include_hda_libraries: Whether to also include `hou.hda.loadedFiles()` results.
+        recurse_in_locked_nodes: Whether to inspect child nodes inside locked assets.
 
     Returns:
         A list of asset reference records.
     """
-    references = scan_file_references(project_dir_variable, include_all_refs)
+    references = scan_file_references(
+        project_dir_variable,
+        include_all_refs,
+        recurse_in_locked_nodes=recurse_in_locked_nodes,
+    )
     if include_hda_libraries:
         known_paths = {normalize_for_compare(reference.expanded_path) for reference in references}
         references.extend(
@@ -36,38 +42,53 @@ def scan_assets(
 
 
 def scan_file_references(
-    project_dir_variable: str = "HIP", include_all_refs: bool = True
+    project_dir_variable: str = "HIP",
+    include_all_refs: bool = True,
+    recurse_in_locked_nodes: bool = False,
 ) -> list[AssetReference]:
     """Scan file parameters using `hou.fileReferences()`.
 
     Args:
         project_dir_variable: Houdini variable name used to shorten matching paths.
         include_all_refs: Passed through to `hou.fileReferences()`.
+        recurse_in_locked_nodes: Whether to inspect child nodes inside locked assets.
 
     Returns:
         A list of file parameter references.
     """
     hou = get_hou()
     references = []
-    for parm, path_value in hou.fileReferences(project_dir_variable, include_all_refs):
-        raw_path = _raw_path_from_parm(parm, path_value)
-        expanded_path = _expand_string(raw_path)
-        parm_path = _safe_parm_path(parm)
-        node_path = _safe_node_path(parm)
-        can_update, reason = _can_update_parm(parm)
-        references.append(
-            AssetReference(
-                kind=ReferenceKind.FILE_PARAMETER,
-                raw_path=raw_path,
-                expanded_path=expanded_path,
-                exists=path_exists(expanded_path),
-                parm_path=parm_path,
-                node_path=node_path,
-                can_update=can_update,
-                reason=reason,
-            )
-        )
+    root = hou.node("/")
+    if root is None:
+        return references
+    nodes = (root, *root.allSubChildren(recurse_in_locked_nodes=recurse_in_locked_nodes))
+    for node in nodes:
+        for parm, path_value in node.fileReferences(
+            recurse=False,
+            project_dir_variable=project_dir_variable,
+            include_all_refs=include_all_refs,
+        ):
+            references.append(_reference_from_parm(parm, path_value))
     return references
+
+
+def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
+    """Build an asset reference from a Houdini parameter and path."""
+    raw_path = _raw_path_from_parm(parm, path_value)
+    expanded_path = _expand_string(raw_path)
+    parm_path = _safe_parm_path(parm)
+    node_path = _safe_node_path(parm)
+    can_update, reason = _can_update_parm(parm)
+    return AssetReference(
+        kind=ReferenceKind.FILE_PARAMETER,
+        raw_path=raw_path,
+        expanded_path=expanded_path,
+        exists=path_exists(expanded_path),
+        parm_path=parm_path,
+        node_path=node_path,
+        can_update=can_update,
+        reason=reason,
+    )
 
 
 def scan_hda_libraries() -> list[AssetReference]:

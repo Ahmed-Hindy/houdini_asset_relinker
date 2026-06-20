@@ -55,6 +55,23 @@ def test_replace_path_text_dry_run_does_not_touch_houdini() -> None:
     assert report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
 
 
+def test_replace_path_text_skips_longer_houdini_variable_prefixes() -> None:
+    """It does not relink paths that only share a shorter variable prefix."""
+    report = replace_path_text(
+        "$CACHE",
+        "$CACHE_G",
+        dry_run=True,
+        references=[
+            _reference("$CACHE/sim.$F4.bgeo.sc"),
+            _reference("$CACHE_G/sim.$F4.bgeo.sc"),
+        ],
+    )
+
+    assert report.changed_count == 1
+    assert report.results[0].old_path == "$CACHE/sim.$F4.bgeo.sc"
+    assert report.results[0].new_path == "$CACHE_G/sim.$F4.bgeo.sc"
+
+
 def test_replace_path_text_defaults_to_case_insensitive_windows_paths() -> None:
     """It relinks Windows-style paths when only the drive or folder casing differs."""
     report = replace_path_text(

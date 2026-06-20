@@ -208,6 +208,9 @@ def path_family(expanded_path: str, depth: int = PATH_FAMILY_DEPTH) -> str:
     return "<bare>"
 
 
+_PATH_TOKEN_CHAR = r"A-Za-z0-9_"
+
+
 def replace_text(
     path_value: str, find_text: str, replace_with: str, case_sensitive: bool = False
 ) -> Optional[str]:
@@ -216,17 +219,27 @@ def replace_text(
     Matching is case-insensitive by default so Windows-style path casing
     differences do not block relinks. Pass ``case_sensitive=True`` to require
     exact letter-case matches.
+
+    Matches must sit on path token boundaries so shorter Houdini variables such
+    as ``$CACHE`` do not match inside longer names like ``$CACHE_G``.
     """
     if not find_text:
         return None
-    if case_sensitive:
-        if find_text not in path_value:
-            return None
-        return path_value.replace(find_text, replace_with)
-    pattern = re.compile(re.escape(find_text), re.IGNORECASE)
+    flags = 0 if case_sensitive else re.IGNORECASE
+    pattern = re.compile(
+        rf"(?<![{_PATH_TOKEN_CHAR}]){re.escape(find_text)}(?![{_PATH_TOKEN_CHAR}])",
+        flags,
+    )
     if not pattern.search(path_value):
         return None
     return pattern.sub(lambda _match: replace_with, path_value)
+
+
+def matches_find_text(path_value: str, find_text: str, case_sensitive: bool = False) -> bool:
+    """Return whether ``find_text`` matches inside ``path_value`` using relink Find rules."""
+    if not find_text:
+        return False
+    return replace_text(path_value, find_text, find_text, case_sensitive) is not None
 
 
 def _unc_path_family(path_value: str, depth: int) -> str:

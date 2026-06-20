@@ -21,7 +21,7 @@ from houdini_asset_relinker.models import (
     is_generated_output,
     normalized_reference_role,
 )
-from houdini_asset_relinker.path_utils import normalize_for_compare
+from houdini_asset_relinker.path_utils import matches_find_text, normalize_for_compare
 from houdini_asset_relinker.qt import QtCore, QtWidgets
 from houdini_asset_relinker.scanner import scan_assets
 from houdini_asset_relinker.ui.houdini import (
@@ -92,6 +92,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._preview_request: Optional[ReplaceRequest] = None
         self._preview_references: tuple[AssetReference, ...] = ()
         self._current_report: Optional[UpdateReport] = None
+        self._live_relink_preview_depth = 0
+        self._live_relink_preview_timer = QtCore.QTimer(self)
+        self._live_relink_preview_timer.setSingleShot(True)
+        self._live_relink_preview_timer.timeout.connect(self._run_scheduled_live_relink_preview)
 
         self._build_actions()
         self._build_ui()
@@ -116,6 +120,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         self._reference_model.set_references(references)
         self._clear_report()
+        self._update_find_match_highlight()
+        self._run_scheduled_live_relink_preview()
         self._update_summary()
         output_count = sum(is_generated_output(reference) for reference in references)
         context_note = (
@@ -127,40 +133,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def preview_replace(self) -> None:
         """Run a dry-run replacement preview from the current settings."""
-        request = self._current_replace_request()
-        if not request.find_text:
-            self._warn("Find text cannot be empty.")
-            return
-        if not self._reference_model.references():
-            self._warn("Scan the scene before previewing replacements.")
-            return
-        references = self._resolve_replace_references(request)
-        if not references:
-            self._warn(
-                f"No references match the selected relink scope: {_scope_label(request.scope)}."
-            )
-            return
-
-        self._set_busy(True)
-        try:
-            report = self._build_replace_report(request, references, dry_run=True)
-        except Exception as error:
-            self._show_error("Preview failed", error)
-            return
-        finally:
-            self._set_busy(False)
-
-        self._preview_report = report
-        self._preview_request = request
-        self._preview_references = tuple(references)
-        self._current_report = report
-        self._report_model.set_report(report)
-        self.apply_button.setEnabled(bool(report.results))
-        self.copy_report_button.setEnabled(bool(report.results))
-        self._set_status(
-            f"Preview found {report.changed_count} planned changes, "
-            f"{report.skipped_count} skipped, {report.failed_count} failed."
-        )
+        self._update_live_relink_preview(show_warnings=True)
 
     def apply_replace(self) -> None:
         """Apply the last previewed replacement after confirmation."""
@@ -169,8 +142,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self._warn("Preview replacements before applying changes.")
             return
         if preview_request != self._current_replace_request():
-            self._invalidate_preview()
-            self._warn("Replacement settings changed. Preview the relink again before applying.")
+            self._update_live_relink_preview()
+            self._warn("Replacement settings changed. Review the live preview before applying.")
             return
 
         answer = QtWidgets.QMessageBox.warning(
@@ -462,15 +435,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         form = QtWidgets.QFormLayout()
         self.find_edit = QtWidgets.QLineEdit(self)
         self.find_edit.setPlaceholderText("P:/old_show or $JOB/assets")
-        self.find_edit.setToolTip(
-            "Path text to find in writable references. Matching ignores letter case by default."
-        )
+        self.find_edit.setToolTip("Full words or partial text to find in reference paths.")
         self.replace_edit = QtWidgets.QLineEdit(self)
         self.replace_edit.setPlaceholderText("P:/new_show or $HIP/assets")
         self.replace_edit.setToolTip("Replacement text to write into matching references.")
         self.scope_combo = QtWidgets.QComboBox(self)
         self.scope_combo.setMinimumWidth(190)
-        self.scope_combo.setToolTip("Limit preview and apply to a safer subset of scanned rows.")
+        self.scope_combo.setToolTip("Apply to a safer subset of scanned rows.")
         self.scope_combo.addItem("Visible filtered rows", SCOPE_VISIBLE_ROWS)
         self.scope_combo.addItem("Selected row", SCOPE_SELECTED_ROW)
         self.scope_combo.addItem("Selected path family", SCOPE_PATH_FAMILY)
@@ -481,12 +452,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         form.addRow("Scope", self.scope_combo)
         layout.addLayout(form)
 
+        self.find_match_label = QtWidgets.QLabel(self)
+        self.find_match_label.setObjectName("findMatchLabel")
+        self.find_match_label.setWordWrap(True)
+        self.find_match_label.hide()
+        layout.addWidget(self.find_match_label)
+
         self.case_sensitive_check = QtWidgets.QCheckBox("Exact case only", self)
         self.case_sensitive_check.setChecked(False)
-        self.case_sensitive_check.setToolTip(
-            "Opt in to exact letter-case matching. Leave off for common Windows path casing "
-            "differences."
-        )
+        self.case_sensitive_check.setToolTip("Exact letter-case matching.")
         self.include_hda_replace_check = QtWidgets.QCheckBox("Relink HDA libraries too", self)
         self.include_hda_replace_check.setChecked(False)
         self.include_hda_replace_check.setToolTip(
@@ -506,7 +480,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.preview_button = QtWidgets.QPushButton("Preview", self)
         self.preview_button.setObjectName("primaryButton")
         self.preview_button.setToolTip(
-            "Preview case-insensitive relink changes without modifying the scene."
+            "Refresh the relink preview. The report table updates live while you edit Find "
+            "and Replace with."
         )
         self.apply_button = QtWidgets.QPushButton("Apply", self)
         self.apply_button.setObjectName("applyButton")
@@ -579,8 +554,19 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self.include_hda_replace_check.toggled,
             self.uninstall_old_hda_check.toggled,
             self.scope_combo.currentIndexChanged,
+            self.search_edit.textChanged,
+            self.missing_only_check.toggled,
+            self.writable_only_check.toggled,
+            self.kind_combo.currentIndexChanged,
         ):
-            signal.connect(self._invalidate_preview)
+            signal.connect(self._schedule_live_relink_preview)
+
+        self.find_edit.textChanged.connect(self._update_find_match_highlight)
+        self.case_sensitive_check.toggled.connect(self._update_find_match_highlight)
+        self.search_edit.textChanged.connect(self._update_find_match_highlight)
+        self.missing_only_check.toggled.connect(self._update_find_match_highlight)
+        self.writable_only_check.toggled.connect(self._update_find_match_highlight)
+        self.kind_combo.currentIndexChanged.connect(self._update_find_match_highlight)
 
         selection = self.reference_table.selectionModel()
         selection.selectionChanged.connect(self._selection_changed)
@@ -588,6 +574,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._proxy_model.rowsRemoved.connect(self._update_summary)
         self._proxy_model.modelReset.connect(self._update_summary)
         self._sync_reference_filters()
+        self._update_find_match_highlight()
+        self._run_scheduled_live_relink_preview()
 
     def _kind_filter_changed(self, *_args: object) -> None:
         self._proxy_model.set_kind_filter(self.kind_combo.currentData())
@@ -636,6 +624,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             ]
         )
         self.detail_text.setPlainText("\n".join(lines))
+        if self.scope_combo.currentData() in (SCOPE_SELECTED_ROW, SCOPE_PATH_FAMILY):
+            self._schedule_live_relink_preview()
 
     def _selected_reference(self) -> Optional[AssetReference]:
         selection = self.reference_table.selectionModel()
@@ -674,6 +664,32 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             f"{self._proxy_model.rowCount()} visible"
         )
         self.export_button.setEnabled(bool(references))
+
+    def _update_find_match_highlight(self, *_args: object) -> None:
+        """Update live Find match counts and highlight matching reference rows."""
+        find_text = self.find_edit.text()
+        case_sensitive = self.case_sensitive_check.isChecked()
+        self._reference_model.set_find_highlight(find_text, case_sensitive)
+
+        if not find_text.strip():
+            self.find_match_label.clear()
+            self.find_match_label.hide()
+            return
+
+        match_count = self._reference_model.find_match_count()
+        visible_match_count = sum(
+            1
+            for reference in self._visible_references()
+            if matches_find_text(reference.raw_path, find_text, case_sensitive)
+        )
+        noun = "reference" if match_count == 1 else "references"
+        verb = "matches" if match_count == 1 else "match"
+        label = f"{match_count} {noun} {verb} Find"
+        if visible_match_count != match_count:
+            visible_noun = "reference" if visible_match_count == 1 else "references"
+            label += f" ({visible_match_count} {visible_noun} visible)"
+        self.find_match_label.setText(label)
+        self.find_match_label.setVisible(True)
 
     def _current_replace_request(self) -> ReplaceRequest:
         return ReplaceRequest(
@@ -747,17 +763,64 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             )
         return _merge_reports(dry_run, reports)
 
-    def _invalidate_preview(self, *_args: object) -> None:
-        if self._preview_report is None and self._preview_request is None:
+    def _schedule_live_relink_preview(self, *_args: object) -> None:
+        """Queue a live relink preview refresh on the next event-loop tick."""
+        if not self._live_relink_preview_timer.isActive():
+            self._live_relink_preview_timer.start(0)
+
+    def _run_scheduled_live_relink_preview(self) -> None:
+        """Run the queued live relink preview refresh."""
+        self._update_live_relink_preview(show_warnings=False)
+
+    def _update_live_relink_preview(self, show_warnings: bool = False, *_args: object) -> None:
+        """Rebuild the relink report table from the current replacement settings."""
+        if self._live_relink_preview_depth:
             return
-        self._preview_report = None
-        self._preview_request = None
-        self._preview_references = ()
-        self._current_report = None
-        self._report_model.set_report(None)
-        self.apply_button.setEnabled(False)
-        self.copy_report_button.setEnabled(False)
-        self._set_status("Replacement settings changed. Preview again before applying.")
+        self._live_relink_preview_depth += 1
+        try:
+            request = self._current_replace_request()
+            if not request.find_text.strip():
+                self._clear_report()
+                return
+            if not self._reference_model.references():
+                self._clear_report()
+                if show_warnings:
+                    self._warn("Scan the scene before previewing replacements.")
+                return
+
+            references = self._resolve_replace_references(request)
+            if not references:
+                self._clear_report()
+                if show_warnings:
+                    self._warn(
+                        f"No references match the selected relink scope: "
+                        f"{_scope_label(request.scope)}."
+                    )
+                return
+
+            try:
+                report = self._build_replace_report(request, references, dry_run=True)
+            except Exception as error:
+                self._clear_report()
+                if show_warnings:
+                    self._show_error("Preview failed", error)
+                else:
+                    self._set_status(f"Relink preview failed: {error}")
+                return
+
+            self._preview_report = report
+            self._preview_request = request
+            self._preview_references = tuple(references)
+            self._current_report = report
+            self._report_model.set_report(report)
+            self.apply_button.setEnabled(bool(report.results))
+            self.copy_report_button.setEnabled(bool(report.results))
+            self._set_status(
+                f"Preview: {report.changed_count} planned changes, "
+                f"{report.skipped_count} skipped, {report.failed_count} failed."
+            )
+        finally:
+            self._live_relink_preview_depth -= 1
 
     def _clear_report(self) -> None:
         self._preview_report = None

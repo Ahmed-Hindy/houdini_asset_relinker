@@ -6,6 +6,7 @@ from houdini_asset_relinker.qt import QtCore, QtGui, QtWidgets, qt_enum
 
 DISPLAY_ROLE = qt_enum("ItemDataRole", "DisplayRole")
 FOREGROUND_ROLE = qt_enum("ItemDataRole", "ForegroundRole")
+BACKGROUND_ROLE = qt_enum("ItemDataRole", "BackgroundRole")
 TOOLTIP_ROLE = qt_enum("ItemDataRole", "ToolTipRole")
 USER_ROLE = qt_enum("ItemDataRole", "UserRole")
 HORIZONTAL = qt_enum("Orientation", "Horizontal")

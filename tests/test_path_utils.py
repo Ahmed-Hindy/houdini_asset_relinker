@@ -5,6 +5,7 @@ from pathlib import Path
 from houdini_asset_relinker.path_utils import (
     build_sequence_pattern,
     contains_sequence_token,
+    matches_find_text,
     missing_variables,
     path_exists,
     path_family,
@@ -30,6 +31,26 @@ def test_replace_text_exact_case_is_opt_in() -> None:
     assert (
         replace_text("P:/show/cache/a.bgeo.sc", "p:/show", "D:/show", case_sensitive=True) is None
     )
+
+
+def test_replace_text_does_not_match_longer_houdini_variables() -> None:
+    """It avoids prefix matches inside longer variable names."""
+    assert replace_text("$CACHE_G/sim.$F4.bgeo.sc", "$CACHE", "$CACHE_G") is None
+    assert (
+        replace_text("$CACHE/sim.$F4.bgeo.sc", "$CACHE", "$CACHE_G") == "$CACHE_G/sim.$F4.bgeo.sc"
+    )
+    assert (
+        replace_text("$HIP/$CACHE/cache/file.bgeo.sc", "$CACHE", "$CACHE_G")
+        == "$HIP/$CACHE_G/cache/file.bgeo.sc"
+    )
+
+
+def test_matches_find_text_uses_replace_text_boundaries() -> None:
+    """It reports Find matches using the same rules as relink replacement."""
+    assert matches_find_text("$CACHE/sim.$F4.bgeo.sc", "$CACHE")
+    assert not matches_find_text("$CACHE_G/sim.$F4.bgeo.sc", "$CACHE")
+    assert not matches_find_text("", "$CACHE")
+    assert not matches_find_text("$CACHE/sim.$F4.bgeo.sc", "")
 
 
 def test_replace_root() -> None:

@@ -68,6 +68,11 @@ def _set_scope(relinker: AssetRelinkerWindow, scope: str) -> None:
     relinker.scope_combo.setCurrentIndex(index)
 
 
+def _flush_live_relink_preview(qt_app) -> None:
+    """Process pending Qt events so scheduled live relink previews run in tests."""
+    qt_app.processEvents()
+
+
 def _select_reference_by_raw_path(relinker: AssetRelinkerWindow, raw_path: str) -> None:
     """Select a reference row by raw path through the current proxy model."""
     for row in range(relinker._proxy_model.rowCount()):
@@ -263,12 +268,11 @@ def test_reference_table_keeps_generated_outputs_out_of_broken_target_filter(qt_
         relinker.close()
 
 
-def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
-    """It disables Apply when replacement settings diverge from the preview."""
+def test_replacement_input_change_updates_live_preview(qt_app, relinker_window) -> None:
+    """It keeps the relink report in sync while Find text changes."""
     relinker_window.find_edit.setText("P:/old_show")
     relinker_window.replace_edit.setText("P:/new_show")
-
-    relinker_window.preview_replace()
+    _flush_live_relink_preview(qt_app)
 
     assert relinker_window.apply_button.isEnabled()
     assert relinker_window._preview_request == ReplaceRequest(
@@ -282,18 +286,59 @@ def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
     assert relinker_window._report_model.rowCount() == 1
 
     relinker_window.find_edit.setText("P:/other_show")
+    _flush_live_relink_preview(qt_app)
 
-    assert relinker_window._preview_report is None
-    assert relinker_window._preview_request is None
+    assert relinker_window._preview_report is not None
+    assert relinker_window._preview_request == ReplaceRequest(
+        find_text="P:/other_show",
+        replace_with="P:/new_show",
+        case_sensitive=False,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
+    )
     assert not relinker_window.apply_button.isEnabled()
     assert relinker_window._report_model.rowCount() == 0
 
 
-def test_apply_uses_the_stored_preview_request(monkeypatch, relinker_window) -> None:
+def test_live_relink_preview_updates_without_preview_button(qt_app, relinker_window) -> None:
+    """It populates the relink report as the user edits Find and Replace with."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _flush_live_relink_preview(qt_app)
+
+    assert relinker_window._report_model.rowCount() == 1
+    assert relinker_window._current_report is not None
+    assert relinker_window._current_report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
+
+    relinker_window.replace_edit.setText("P:/renamed_show")
+    _flush_live_relink_preview(qt_app)
+
+    assert relinker_window._report_model.rowCount() == 1
+    assert relinker_window._current_report is not None
+    assert relinker_window._current_report.results[0].new_path == "P:/renamed_show/cache/a.bgeo.sc"
+
+
+def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) -> None:
+    """It clears the relink report when Find is empty."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _flush_live_relink_preview(qt_app)
+    assert relinker_window._report_model.rowCount() == 1
+
+    relinker_window.find_edit.clear()
+    _flush_live_relink_preview(qt_app)
+
+    assert relinker_window._preview_report is None
+    assert relinker_window._report_model.rowCount() == 0
+    assert not relinker_window.apply_button.isEnabled()
+
+
+def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_window) -> None:
     """It applies the request that produced the preview."""
     relinker_window.find_edit.setText("P:/old_show")
     relinker_window.replace_edit.setText("P:/new_show")
-    relinker_window.preview_replace()
+    _flush_live_relink_preview(qt_app)
 
     captured_requests: list[ReplaceRequest] = []
 
@@ -475,8 +520,8 @@ def test_missing_under_find_root_scope_excludes_existing_and_nonmatching_rows(
     assert relinker_window._report_model.rowCount() == 1
 
 
-def test_apply_uses_preview_references_when_filters_change(monkeypatch, relinker_window) -> None:
-    """It applies the exact target set that produced the preview."""
+def test_apply_uses_current_live_preview_scope(monkeypatch, qt_app, relinker_window) -> None:
+    """It applies the references currently shown in the live relink preview."""
     relinker_window._reference_model.set_references(
         [
             _reference("P:/old_show/cache/a.bgeo.sc"),
@@ -485,7 +530,7 @@ def test_apply_uses_preview_references_when_filters_change(monkeypatch, relinker
     )
     relinker_window.find_edit.setText("P:/old_show")
     relinker_window.replace_edit.setText("P:/new_show")
-    relinker_window.preview_replace()
+    _flush_live_relink_preview(qt_app)
 
     applied_references: list[str] = []
 
@@ -529,11 +574,78 @@ def test_apply_uses_preview_references_when_filters_change(monkeypatch, relinker
         "warning",
         lambda *_args, **_kwargs: window_module.MESSAGE_OK,
     )
-    relinker_window.search_edit.setText("no rows visible")
+    relinker_window.search_edit.setText("a.bgeo")
+    _flush_live_relink_preview(qt_app)
 
     relinker_window.apply_replace()
 
-    assert applied_references == [
-        "P:/old_show/cache/a.bgeo.sc",
-        "P:/old_show/cache/b.bgeo.sc",
-    ]
+    assert applied_references == ["P:/old_show/cache/a.bgeo.sc"]
+
+
+def test_find_match_label_updates_for_matching_paths(relinker_window) -> None:
+    """It shows a live Find match count while the user types."""
+    relinker_window.missing_only_check.setChecked(False)
+    relinker_window.writable_only_check.setChecked(False)
+    relinker_window._reference_model.set_references(
+        [
+            _reference("$CACHE/sim.$F4.bgeo.sc"),
+            _reference("$CACHE_G/sim.$F4.bgeo.sc"),
+        ]
+    )
+    relinker_window._sync_reference_filters()
+
+    relinker_window.find_edit.setText("$CACHE")
+
+    assert not relinker_window.find_match_label.isHidden()
+    assert relinker_window.find_match_label.text() == "1 reference matches Find"
+
+
+def test_find_match_label_includes_visible_count_when_filtered(relinker_window) -> None:
+    """It reports how many Find matches are currently visible in the table."""
+    relinker_window.missing_only_check.setChecked(False)
+    relinker_window.writable_only_check.setChecked(False)
+    relinker_window._reference_model.set_references(
+        [
+            _reference("$CACHE/sim.$F4.bgeo.sc"),
+            _reference("$HIP/$CACHE/other.bgeo.sc"),
+        ]
+    )
+    relinker_window._sync_reference_filters()
+    relinker_window.search_edit.setText("$HIP")
+
+    relinker_window.find_edit.setText("$CACHE")
+
+    assert (
+        relinker_window.find_match_label.text() == "2 references match Find (1 reference visible)"
+    )
+
+
+def test_find_match_highlight_marks_matching_rows(relinker_window) -> None:
+    """It highlights reference rows whose raw path matches Find."""
+    from houdini_asset_relinker.ui.qt_constants import BACKGROUND_ROLE
+
+    relinker_window.missing_only_check.setChecked(False)
+    relinker_window.writable_only_check.setChecked(False)
+    relinker_window._reference_model.set_references(
+        [
+            _reference("$CACHE/sim.$F4.bgeo.sc"),
+            _reference("$CACHE_G/sim.$F4.bgeo.sc"),
+        ]
+    )
+    relinker_window._sync_reference_filters()
+    relinker_window.find_edit.setText("$CACHE")
+
+    model = relinker_window._reference_model
+    assert model.data(model.index(0, 0), BACKGROUND_ROLE) is not None
+    assert model.data(model.index(1, 0), BACKGROUND_ROLE) is None
+
+
+def test_find_match_label_hides_when_find_is_empty(relinker_window) -> None:
+    """It clears the live Find match label when Find is empty."""
+    relinker_window.find_edit.setText("$CACHE")
+    assert not relinker_window.find_match_label.isHidden()
+
+    relinker_window.find_edit.clear()
+
+    assert relinker_window.find_match_label.isHidden()
+    assert relinker_window.find_match_label.text() == ""

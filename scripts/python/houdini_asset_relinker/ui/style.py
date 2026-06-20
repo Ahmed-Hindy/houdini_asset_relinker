@@ -88,6 +88,10 @@ QLabel#sectionLabel {
 QLabel#summaryLabel {
     color: #aeb7c0;
 }
+QLabel#findMatchLabel {
+    color: #8fb4d9;
+    padding-left: 2px;
+}
 QFrame#statFrame {
     background: #292f35;
     border: 1px solid #3b444d;
@@ -108,3 +112,4 @@ STATUS_COLOR_READY = "#2f8f46"
 STATUS_COLOR_UNDEFINED_VARIABLE = "#d9a800"
 STATUS_COLOR_MISSING = "#d9534f"
 STATUS_COLOR_NOT_UPDATABLE = "#d99000"
+FIND_MATCH_ROW_COLOR = "#2a3544"

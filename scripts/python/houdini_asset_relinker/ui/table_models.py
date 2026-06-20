@@ -15,8 +15,10 @@ from houdini_asset_relinker.models import (
     is_generated_output,
     normalized_reference_role,
 )
+from houdini_asset_relinker.path_utils import matches_find_text
 from houdini_asset_relinker.qt import QtCore, QtGui
 from houdini_asset_relinker.ui.qt_constants import (
+    BACKGROUND_ROLE,
     CASE_INSENSITIVE,
     DISPLAY_ROLE,
     FOREGROUND_ROLE,
@@ -26,6 +28,7 @@ from houdini_asset_relinker.ui.qt_constants import (
     USER_ROLE,
 )
 from houdini_asset_relinker.ui.style import (
+    FIND_MATCH_ROW_COLOR,
     STATUS_COLOR_MISSING,
     STATUS_COLOR_NOT_UPDATABLE,
     STATUS_COLOR_READY,
@@ -52,6 +55,8 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
     def __init__(self, parent: Optional[QtCore.QObject] = None) -> None:
         super().__init__(parent)
         self._references: list[AssetReference] = []
+        self._find_text = ""
+        self._find_case_sensitive = False
 
     def rowCount(self, parent: QtCore.QModelIndex = INVALID_INDEX) -> int:
         """Return the number of references in the model."""
@@ -77,6 +82,8 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
             return self._tooltip(reference)
         if role == FOREGROUND_ROLE and key == "status":
             return self._status_brush(reference)
+        if role == BACKGROUND_ROLE and self._reference_matches_find(reference):
+            return QtGui.QBrush(QtGui.QColor(FIND_MATCH_ROW_COLOR))
         if role == USER_ROLE:
             return reference
         return None
@@ -100,6 +107,29 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
     def reference_at(self, row: int) -> AssetReference:
         """Return a reference by source-model row."""
         return self._references[row]
+
+    def set_find_highlight(self, find_text: str, case_sensitive: bool = False) -> None:
+        """Highlight rows whose raw path matches the current relink Find text."""
+        self._find_text = find_text
+        self._find_case_sensitive = case_sensitive
+        if not self._references:
+            return
+        top_left = self.index(0, 0)
+        bottom_right = self.index(len(self._references) - 1, len(self._columns) - 1)
+        self.dataChanged.emit(top_left, bottom_right, [BACKGROUND_ROLE])
+
+    def find_match_count(self) -> int:
+        """Return how many references match the current relink Find text."""
+        if not self._find_text:
+            return 0
+        return sum(1 for reference in self._references if self._reference_matches_find(reference))
+
+    def _reference_matches_find(self, reference: AssetReference) -> bool:
+        return matches_find_text(
+            reference.raw_path,
+            self._find_text,
+            self._find_case_sensitive,
+        )
 
     def _display_value(self, reference: AssetReference, key: str) -> str:
         if key == "status":

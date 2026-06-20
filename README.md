@@ -59,7 +59,7 @@ To update multiple paths at once:
 1. Go to the **Relink** tab on the right side.
 2. In the **Find** field, enter the old path prefix (e.g., `P:/old_show` or `D:/temp`).
 3. In the **Replace with** field, enter the new path (e.g., `P:/new_show` or `$HIP/assets`).
-4. Click **Preview** to see what changes will be made in the preview table below.
+4. Review the planned changes in the live preview table below.
 5. Review the changes, then click **Apply** to run the update on your scene parameters.
 
 ---
@@ -67,6 +67,5 @@ To update multiple paths at once:
 ## Safety Notes
 
 - **Backup**: Always save a backup copy of your `.hip` file before applying large path replacements.
-- **Use Preview**: Always click **Preview** first and review the target list to make sure you are only modifying the intended nodes.
 - **Limit Scope**: Keep the relink scope on the smallest useful target set before previewing and applying.
 - **HDA Uninstall**: When relinking HDA libraries, checking *Uninstall old HDA libraries* will automatically clean up the old library paths from the session.

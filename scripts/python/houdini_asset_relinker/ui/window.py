@@ -490,12 +490,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.uninstall_old_hda_check)
 
         button_row = QtWidgets.QHBoxLayout()
-        self.preview_button = QtWidgets.QPushButton("Preview", self)
-        self.preview_button.setObjectName("primaryButton")
-        self.preview_button.setToolTip(
-            "Refresh the relink preview. The report table updates live while you edit Find "
-            "and Replace with."
-        )
         self.apply_button = QtWidgets.QPushButton("Apply", self)
         self.apply_button.setObjectName("applyButton")
         self.apply_button.setEnabled(False)
@@ -503,7 +497,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.copy_report_button = QtWidgets.QPushButton("Copy Report", self)
         self.copy_report_button.setEnabled(False)
         self.copy_report_button.setToolTip("Copy the latest preview or apply report.")
-        button_row.addWidget(self.preview_button)
         button_row.addWidget(self.apply_button)
         button_row.addWidget(self.copy_report_button)
         layout.addLayout(button_row)
@@ -573,7 +566,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
         self.reset_filters_button.clicked.connect(self._reset_reference_filters)
-        self.preview_button.clicked.connect(self.preview_replace)
         self.apply_button.clicked.connect(self.apply_replace)
         self.copy_report_button.clicked.connect(self.copy_report)
         self.search_edit.textChanged.connect(self._proxy_model.set_search_text)
@@ -879,7 +871,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
     def _set_busy(self, busy: bool) -> None:
         self.setCursor(WAIT_CURSOR if busy else ARROW_CURSOR)
         self.scan_button.setEnabled(not busy)
-        self.preview_button.setEnabled(not busy)
         self.export_button.setEnabled(not busy and bool(self._reference_model.references()))
 
     def _set_status(self, text: str) -> None:

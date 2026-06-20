@@ -209,9 +209,14 @@ def path_family(expanded_path: str, depth: int = PATH_FAMILY_DEPTH) -> str:
 
 
 def replace_text(
-    path_value: str, find_text: str, replace_with: str, case_sensitive: bool = True
+    path_value: str, find_text: str, replace_with: str, case_sensitive: bool = False
 ) -> Optional[str]:
-    """Replace text in a path and return None when there is no match."""
+    """Replace text in a path and return None when there is no match.
+
+    Matching is case-insensitive by default so Windows-style path casing
+    differences do not block relinks. Pass ``case_sensitive=True`` to require
+    exact letter-case matches.
+    """
     if not find_text:
         return None
     if case_sensitive:

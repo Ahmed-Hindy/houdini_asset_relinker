@@ -104,6 +104,7 @@ for ref in references:
     print(ref.raw_path, ref.expanded_path, ref.exists)
 
 # 2. Dry run path replacement
+# Matching is case-insensitive by default; pass case_sensitive=True for exact-case relinks.
 report = replace_path_text("P:/old_show", "P:/new_show", dry_run=True)
 print(report.to_text())
 

@@ -14,17 +14,22 @@ from houdini_asset_relinker.path_utils import (
 )
 
 
-def test_replace_text_case_sensitive() -> None:
-    """It replaces matching text only when the case matches."""
+def test_replace_text_defaults_to_case_insensitive() -> None:
+    """It replaces Windows-style path text when only casing differs."""
     result = replace_text("P:/show/cache/a.bgeo.sc", "P:/show", "D:/show")
     assert result == "D:/show/cache/a.bgeo.sc"
-    assert replace_text("P:/show/cache/a.bgeo.sc", "p:/show", "D:/show") is None
 
-
-def test_replace_text_case_insensitive() -> None:
-    """It can replace text case-insensitively."""
     result = replace_text("P:/show/cache/a.bgeo.sc", "p:/SHOW", "D:/show", case_sensitive=False)
     assert result == "D:/show/cache/a.bgeo.sc"
+
+
+def test_replace_text_exact_case_is_opt_in() -> None:
+    """It can require exact letter-case matches."""
+    result = replace_text("P:/show/cache/a.bgeo.sc", "P:/show", "D:/show", case_sensitive=True)
+    assert result == "D:/show/cache/a.bgeo.sc"
+    assert (
+        replace_text("P:/show/cache/a.bgeo.sc", "p:/show", "D:/show", case_sensitive=True) is None
+    )
 
 
 def test_replace_root() -> None:

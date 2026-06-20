@@ -45,6 +45,22 @@ from houdini_asset_relinker.ui.window import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_hou_for_ui(monkeypatch):
+    """Automatically mock the hou module for all UI window tests."""
+    import sys
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    class FakeUndos:
+        @contextmanager
+        def group(self, label: str):
+            yield
+
+    fake_hou = SimpleNamespace(undos=FakeUndos())
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+
 @pytest.fixture
 def qt_app():
     """Return a QApplication for offscreen widget tests."""

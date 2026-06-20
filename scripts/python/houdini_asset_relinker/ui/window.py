@@ -173,11 +173,14 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
         self._set_busy(True)
         try:
-            report = self._build_replace_report(
-                preview_request,
-                self._preview_references,
-                dry_run=False,
-            )
+            from houdini_asset_relinker.hou_access import undo_group
+
+            with undo_group("Relink Assets"):
+                report = self._build_replace_report(
+                    preview_request,
+                    self._preview_references,
+                    dry_run=False,
+                )
         except Exception as error:
             self._show_error("Apply failed", error)
             return

@@ -24,6 +24,7 @@ try:
     MESSAGE_OK = QtWidgets.QMessageBox.StandardButton.Ok
     MESSAGE_CANCEL = QtWidgets.QMessageBox.StandardButton.Cancel
     MESSAGE_CRITICAL = QtWidgets.QMessageBox.Icon.Critical
+    SCROLL_PER_PIXEL = QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel
 except AttributeError:
     ACTION_CLASS = QtWidgets.QAction
     SELECT_ROWS = QtWidgets.QAbstractItemView.SelectRows
@@ -32,3 +33,4 @@ except AttributeError:
     MESSAGE_OK = QtWidgets.QMessageBox.Ok
     MESSAGE_CANCEL = QtWidgets.QMessageBox.Cancel
     MESSAGE_CRITICAL = QtWidgets.QMessageBox.Critical
+    SCROLL_PER_PIXEL = QtWidgets.QAbstractItemView.ScrollPerPixel

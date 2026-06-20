@@ -40,6 +40,7 @@ from houdini_asset_relinker.ui.qt_constants import (
     MESSAGE_CANCEL,
     MESSAGE_CRITICAL,
     MESSAGE_OK,
+    SCROLL_PER_PIXEL,
     SELECT_ROWS,
     SINGLE_SELECTION,
     WAIT_CURSOR,
@@ -427,6 +428,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.setSelectionMode(SINGLE_SELECTION)
         self.reference_table.setAlternatingRowColors(True)
         self.reference_table.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
+        self._configure_table_scrolling(self.reference_table)
         self.reference_table.verticalHeader().setVisible(False)
         self.reference_table.horizontalHeader().setStretchLastSection(True)
         self.reference_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
@@ -521,6 +523,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.report_table = QtWidgets.QTableView(self)
         self.report_table.setModel(self._report_model)
         self.report_table.setAlternatingRowColors(True)
+        self._configure_table_scrolling(self.report_table)
         self.report_table.verticalHeader().setVisible(False)
         self.report_table.horizontalHeader().setStretchLastSection(True)
         self.report_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
@@ -541,6 +544,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.detail_text.setToolTip("Full details for the selected reference.")
         layout.addWidget(self.detail_text, 1)
         return panel
+
+    def _configure_table_scrolling(self, table: QtWidgets.QTableView) -> None:
+        """Configure smooth pixel-based scrolling for the table."""
+        table.setVerticalScrollMode(SCROLL_PER_PIXEL)
+        table.setHorizontalScrollMode(SCROLL_PER_PIXEL)
+        table.verticalScrollBar().setSingleStep(24)
+        table.horizontalScrollBar().setSingleStep(32)
 
     def _connect_signals(self) -> None:
         self.copy_path_action.triggered.connect(self.copy_selected_reference_path)

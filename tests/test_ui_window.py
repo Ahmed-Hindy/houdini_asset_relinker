@@ -17,7 +17,7 @@ from houdini_asset_relinker.models import (
     UpdateResult,
 )
 from houdini_asset_relinker.ui import window as window_module
-from houdini_asset_relinker.ui.qt_constants import TOOLTIP_ROLE
+from houdini_asset_relinker.ui.qt_constants import SCROLL_PER_PIXEL, TOOLTIP_ROLE
 from houdini_asset_relinker.ui.window import (
     REFERENCE_PATH_FAMILY_COLUMN,
     SCOPE_MISSING_UNDER_ROOT,
@@ -151,6 +151,19 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
         assert relinker.missing_only_check.isChecked()
         assert relinker.writable_only_check.isChecked()
         assert relinker._proxy_model.rowCount() == 1
+    finally:
+        relinker.close()
+
+
+def test_table_scroll_modes(qt_app) -> None:
+    """It configures scroll modes to ScrollPerPixel for both tables."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        assert relinker.reference_table.verticalScrollMode() == SCROLL_PER_PIXEL
+        assert relinker.reference_table.horizontalScrollMode() == SCROLL_PER_PIXEL
+        assert relinker.report_table.verticalScrollMode() == SCROLL_PER_PIXEL
+        assert relinker.report_table.horizontalScrollMode() == SCROLL_PER_PIXEL
     finally:
         relinker.close()
 

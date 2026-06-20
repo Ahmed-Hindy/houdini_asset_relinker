@@ -17,7 +17,22 @@ from houdini_asset_relinker.models import (
     UpdateResult,
 )
 from houdini_asset_relinker.ui import window as window_module
-from houdini_asset_relinker.ui.qt_constants import SCROLL_PER_PIXEL, TOOLTIP_ROLE
+from houdini_asset_relinker.ui.qt_constants import (
+    BACKGROUND_ROLE,
+    DISPLAY_ROLE,
+    HORIZONTAL,
+    SCROLL_PER_PIXEL,
+    TOOLTIP_ROLE,
+)
+from houdini_asset_relinker.ui.style import (
+    REPORT_STATUS_TINT_MIX,
+    REPORT_TABLE_ALT_BASE_COLOR,
+    REPORT_TABLE_BASE_COLOR,
+    STATUS_COLOR_MISSING,
+    STATUS_COLOR_NOT_UPDATABLE,
+    STATUS_COLOR_READY,
+)
+from houdini_asset_relinker.ui.table_models import UpdateResultTableModel, _blend_hex_color
 from houdini_asset_relinker.ui.window import (
     REFERENCE_PATH_FAMILY_COLUMN,
     SCOPE_MISSING_UNDER_ROOT,
@@ -169,6 +184,80 @@ def test_table_scroll_modes(qt_app) -> None:
         assert relinker.reference_table.horizontalScrollMode() == SCROLL_PER_PIXEL
         assert relinker.report_table.verticalScrollMode() == SCROLL_PER_PIXEL
         assert relinker.report_table.horizontalScrollMode() == SCROLL_PER_PIXEL
+    finally:
+        relinker.close()
+
+
+def test_report_table_model_uses_row_tints_and_readable_tooltips(qt_app) -> None:
+    """It omits the status column and encodes outcomes with row tints and tooltips."""
+    del qt_app
+    model = UpdateResultTableModel()
+    model.set_report(
+        UpdateReport(
+            dry_run=True,
+            results=(
+                UpdateResult(
+                    status="would_change",
+                    old_path="/old/a",
+                    new_path="/new/a",
+                    parm_path="/obj/geo1/file",
+                ),
+                UpdateResult(
+                    status="skipped",
+                    old_path="/old/b",
+                    new_path="/new/b",
+                    message="Already matches.",
+                ),
+                UpdateResult(
+                    status="failed",
+                    old_path="/old/c",
+                    new_path="/new/c",
+                    message="Permission denied.",
+                ),
+            ),
+        )
+    )
+
+    assert model.columnCount() == 4
+    assert model.headerData(0, HORIZONTAL, DISPLAY_ROLE) == "Target"
+    assert model.data(model.index(0, 0)) == "/obj/geo1/file"
+
+    expected = (
+        ("Planned change", STATUS_COLOR_READY),
+        ("Skipped", STATUS_COLOR_NOT_UPDATABLE),
+        ("Failed", STATUS_COLOR_MISSING),
+    )
+    for row, (status_label, status_color) in enumerate(expected):
+        tooltip = model.data(model.index(row, 0), TOOLTIP_ROLE)
+        assert tooltip.startswith(f"Status: {status_label}")
+        for column in range(model.columnCount()):
+            brush = model.data(model.index(row, column), BACKGROUND_ROLE)
+            assert brush is not None
+            color = brush.color()
+            assert color.alpha() == 255
+            expected_color = _blend_hex_color(
+                REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR,
+                status_color,
+                REPORT_STATUS_TINT_MIX,
+            )
+            assert color.name() == expected_color.name()
+
+
+def test_report_table_layout_and_legend(qt_app) -> None:
+    """It sizes report columns without a status field and shows the status legend."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        assert relinker._report_model.columnCount() == 4
+        assert relinker.report_table.columnWidth(0) == 200
+        assert relinker.report_table.columnWidth(1) == 280
+        assert relinker.report_table.columnWidth(2) == 280
+        legend_labels = {
+            widget.text()
+            for widget in relinker.findChildren(window_module.QtWidgets.QLabel)
+            if widget.text() in {"Change", "Skipped", "Failed"}
+        }
+        assert legend_labels == {"Change", "Skipped", "Failed"}
     finally:
         relinker.close()
 

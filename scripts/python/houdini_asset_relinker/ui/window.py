@@ -45,7 +45,12 @@ from houdini_asset_relinker.ui.qt_constants import (
     SINGLE_SELECTION,
     WAIT_CURSOR,
 )
-from houdini_asset_relinker.ui.style import ASSET_RELINKER_STYLESHEET
+from houdini_asset_relinker.ui.style import (
+    ASSET_RELINKER_STYLESHEET,
+    STATUS_COLOR_MISSING,
+    STATUS_COLOR_NOT_UPDATABLE,
+    STATUS_COLOR_READY,
+)
 from houdini_asset_relinker.ui.table_models import (
     ReferenceFilterProxy,
     ReferenceTableModel,
@@ -150,8 +155,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self,
             "Apply Asset Relinks",
             (
-                "This will update writable Houdini parameters"
-                " and selected HDA library references in the current session.\n\n"
+                "This will update Houdini parameters"
+                " and selected HDA libraries.\n\n"
                 "Save a copy of the hip file before applying large relinks."
             ),
             MESSAGE_OK | MESSAGE_CANCEL,
@@ -495,18 +500,38 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.copy_report_button)
         layout.addLayout(button_row)
 
+        legend_row = QtWidgets.QHBoxLayout()
+        legend_row.setContentsMargins(0, 0, 0, 0)
+        legend_row.setSpacing(12)
+        for label_text, color in (
+            ("Change", STATUS_COLOR_READY),
+            ("Skipped", STATUS_COLOR_NOT_UPDATABLE),
+            ("Failed", STATUS_COLOR_MISSING),
+        ):
+            item = QtWidgets.QHBoxLayout()
+            item.setSpacing(6)
+            swatch = QtWidgets.QFrame(self)
+            swatch.setFixedSize(12, 12)
+            swatch.setStyleSheet(f"background: {color}; border-radius: 2px;")
+            label = QtWidgets.QLabel(label_text, self)
+            label.setObjectName("summaryLabel")
+            item.addWidget(swatch)
+            item.addWidget(label)
+            legend_row.addLayout(item)
+        legend_row.addStretch(1)
+        layout.addLayout(legend_row)
+
         self.report_table = QtWidgets.QTableView(self)
         self.report_table.setModel(self._report_model)
-        self.report_table.setAlternatingRowColors(True)
+        self.report_table.setAlternatingRowColors(False)
         self._configure_table_scrolling(self.report_table)
         self.report_table.verticalHeader().setVisible(False)
         self.report_table.horizontalHeader().setStretchLastSection(True)
         self.report_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
-        self.report_table.setColumnWidth(0, 90)
-        self.report_table.setColumnWidth(1, 180)
-        self.report_table.setColumnWidth(2, 250)
-        self.report_table.setColumnWidth(3, 250)
-        self.report_table.setToolTip("Preview and apply results for the latest relink operation.")
+        self.report_table.setColumnWidth(0, 200)
+        self.report_table.setColumnWidth(1, 280)
+        self.report_table.setColumnWidth(2, 280)
+        self.report_table.setToolTip("Preview and apply relinking.")
         layout.addWidget(self.report_table, 1)
         return panel
 

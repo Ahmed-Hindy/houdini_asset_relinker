@@ -29,6 +29,9 @@ from houdini_asset_relinker.ui.qt_constants import (
 )
 from houdini_asset_relinker.ui.style import (
     FIND_MATCH_ROW_COLOR,
+    REPORT_STATUS_TINT_MIX,
+    REPORT_TABLE_ALT_BASE_COLOR,
+    REPORT_TABLE_BASE_COLOR,
     STATUS_COLOR_MISSING,
     STATUS_COLOR_NOT_UPDATABLE,
     STATUS_COLOR_READY,
@@ -244,7 +247,6 @@ class UpdateResultTableModel(QtCore.QAbstractTableModel):
     """Table model for path update previews and apply reports."""
 
     _columns = (
-        ("status", "Status"),
         ("parm_path", "Target"),
         ("old_path", "Old Path"),
         ("new_path", "New Path"),
@@ -276,9 +278,9 @@ class UpdateResultTableModel(QtCore.QAbstractTableModel):
         if role == DISPLAY_ROLE:
             return str(getattr(result, key) or "")
         if role == TOOLTIP_ROLE:
-            return "\n".join([result.old_path, result.new_path, result.message]).strip()
-        if role == FOREGROUND_ROLE and key == "status":
-            return self._status_brush(result)
+            return _result_tooltip(result)
+        if role == BACKGROUND_ROLE:
+            return _result_status_tint_brush(result, index.row())
         return None
 
     def headerData(self, section: int, orientation: object, role: int = DISPLAY_ROLE) -> object:
@@ -293,12 +295,58 @@ class UpdateResultTableModel(QtCore.QAbstractTableModel):
         self._results = list(report.results) if report is not None else []
         self.endResetModel()
 
-    def _status_brush(self, result: UpdateResult) -> QtGui.QBrush:
-        if result.status == "failed":
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_MISSING))
-        if result.status == "skipped":
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_NOT_UPDATABLE))
-        return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_READY))
+
+def _result_status_label(result: UpdateResult) -> str:
+    """Return a user-visible label for an update result."""
+    if result.status == "would_change":
+        return "Planned change"
+    if result.status == "changed":
+        return "Applied"
+    if result.status == "skipped":
+        return "Skipped"
+    if result.status == "failed":
+        return "Failed"
+    return result.status
+
+
+def _result_status_color(result: UpdateResult) -> str:
+    """Return the status accent color for an update result."""
+    if result.status == "failed":
+        return STATUS_COLOR_MISSING
+    if result.status == "skipped":
+        return STATUS_COLOR_NOT_UPDATABLE
+    return STATUS_COLOR_READY
+
+
+def _blend_hex_color(base_hex: str, accent_hex: str, mix: float) -> QtGui.QColor:
+    """Blend an accent color onto a base background as an opaque tint."""
+    base = QtGui.QColor(base_hex)
+    accent = QtGui.QColor(accent_hex)
+    ratio = max(0.0, min(mix, 1.0))
+    inverse = 1.0 - ratio
+    return QtGui.QColor(
+        int(base.red() * inverse + accent.red() * ratio),
+        int(base.green() * inverse + accent.green() * ratio),
+        int(base.blue() * inverse + accent.blue() * ratio),
+    )
+
+
+def _result_status_tint_brush(result: UpdateResult, row: int) -> QtGui.QBrush:
+    """Return an opaque row background tint for an update result."""
+    base = REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR
+    color = _blend_hex_color(base, _result_status_color(result), REPORT_STATUS_TINT_MIX)
+    return QtGui.QBrush(color)
+
+
+def _result_tooltip(result: UpdateResult) -> str:
+    """Return tooltip text for an update result row."""
+    parts = [
+        f"Status: {_result_status_label(result)}",
+        result.old_path,
+        result.new_path,
+        result.message,
+    ]
+    return "\n".join(part for part in parts if part).strip()
 
 
 def _parameter_name(parm_path: Optional[str]) -> str:

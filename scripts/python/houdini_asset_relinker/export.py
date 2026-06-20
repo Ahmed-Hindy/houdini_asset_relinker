@@ -10,6 +10,7 @@ from houdini_asset_relinker.models import AssetReference
 
 _FIELDNAMES = [
     "kind",
+    "reference_role",
     "node_path",
     "node_type",
     "parm_path",
@@ -24,6 +25,7 @@ _FIELDNAMES = [
     "path_family",
     "exists",
     "can_update",
+    "broken_relink_target",
     "diagnosis",
     "missing_variables",
     "reason",

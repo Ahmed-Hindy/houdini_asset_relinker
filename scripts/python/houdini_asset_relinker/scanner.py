@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
-from houdini_asset_relinker.models import AssetReference, ReferenceKind
+from houdini_asset_relinker.models import AssetReference, ReferenceKind, ReferenceRole
 from houdini_asset_relinker.path_utils import (
     build_sequence_pattern,
     missing_variables,
@@ -15,7 +15,7 @@ from houdini_asset_relinker.path_utils import (
 )
 
 _IGNORED_FILE_REFERENCE_PARMS = {"descriptivelabel", "licensefile"}
-_OUTPUT_FILE_REFERENCE_PARMS = {  # Common output file parameters. Shouldn't be checked if missing .
+_OUTPUT_FILE_REFERENCE_PARMS = {  # Common output file parameters kept for context only.
     "vm_picture",
     "ar_picture",
     "ar_ass_file",
@@ -110,6 +110,13 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
     parm_name = _safe_parm_name(parm, parm_path)
     parm_label = _safe_parm_label(parm)
     can_update, reason = _can_update_parm(parm)
+    reference_role = ReferenceRole.INBOUND_DEPENDENCY.value
+    if _is_output_file_reference_parm(parm_name):
+        reference_role = ReferenceRole.GENERATED_OUTPUT.value
+        can_update = False
+        reason = (
+            "Generated output path; shown for context, not treated as an inbound asset dependency."
+        )
     return AssetReference(
         kind=ReferenceKind.FILE_PARAMETER,
         raw_path=raw_path,
@@ -122,6 +129,7 @@ def _reference_from_parm(parm: object, path_value: str) -> AssetReference:
         parm_label=parm_label,
         node_path=node_path,
         node_type=node_type,
+        reference_role=reference_role,
         missing_variables=missing_variable_names,
         can_update=can_update,
         reason=reason,
@@ -153,6 +161,7 @@ def scan_hda_libraries() -> list[AssetReference]:
                 sequence_pattern=sequence_path_pattern,
                 path_family=path_family(raw_path) if raw_path != "Embedded" else "Embedded",
                 path_role="hda_library",
+                reference_role=ReferenceRole.HDA_LIBRARY.value,
                 missing_variables=missing_variable_names if raw_path != "Embedded" else (),
                 can_update=can_update,
                 reason=reason,
@@ -262,6 +271,11 @@ def _should_include_file_reference_parm(parm: Optional[object]) -> bool:
         return False
 
     return True
+
+
+def _is_output_file_reference_parm(parm_name: str) -> bool:
+    """Return whether a parameter token represents a generated output path."""
+    return parm_name.casefold() in _OUTPUT_FILE_REFERENCE_PARMS
 
 
 def _is_file_reference_string_parm(parm: object) -> bool:

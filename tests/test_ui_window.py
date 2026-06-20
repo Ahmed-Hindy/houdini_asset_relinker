@@ -9,7 +9,13 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
+from houdini_asset_relinker.models import (
+    AssetReference,
+    ReferenceKind,
+    ReferenceRole,
+    UpdateReport,
+    UpdateResult,
+)
 from houdini_asset_relinker.ui import window as window_module
 from houdini_asset_relinker.ui.qt_constants import TOOLTIP_ROLE
 from houdini_asset_relinker.ui.window import (
@@ -82,6 +88,7 @@ def _reference(
     path_family: str = "P:/old_show/cache",
     parm_path: str = "/obj/geo1/file/file",
     missing_variables: tuple[str, ...] = (),
+    reference_role: str = ReferenceRole.INBOUND_DEPENDENCY.value,
 ) -> AssetReference:
     """Build a file-parameter reference for window tests."""
     return AssetReference(
@@ -93,6 +100,7 @@ def _reference(
         path_family=path_family,
         parm_path=parm_path,
         node_path=parm_path.rsplit("/", 2)[0],
+        reference_role=reference_role,
         can_update=can_update,
         missing_variables=missing_variables,
     )
@@ -139,6 +147,7 @@ def test_startup_filters_match_checked_widgets(qt_app) -> None:
             ]
         )
 
+        assert relinker.missing_only_check.text() == "Broken targets"
         assert relinker.missing_only_check.isChecked()
         assert relinker.writable_only_check.isChecked()
         assert relinker._proxy_model.rowCount() == 1
@@ -181,7 +190,7 @@ def test_reference_table_reports_undefined_variables(qt_app) -> None:
         )
 
         status_index = relinker._reference_model.index(0, 0)
-        note_index = relinker._reference_model.index(0, 8)
+        note_index = relinker._reference_model.index(0, 9)
         assert relinker._reference_model.data(status_index) == "Undefined variable"
         assert relinker._reference_model.data(note_index) == "Undefined variables: AYON_CACHE"
         assert "Undefined variables: AYON_CACHE" in relinker._reference_model.data(
@@ -198,6 +207,49 @@ def test_reference_table_reports_undefined_variables(qt_app) -> None:
         relinker.close()
 
 
+def test_reference_table_keeps_generated_outputs_out_of_broken_target_filter(qt_app) -> None:
+    """It shows generated outputs as context rows, not broken relink targets."""
+    del qt_app
+    relinker = AssetRelinkerWindow()
+    try:
+        relinker._reference_model.set_references(
+            [
+                _reference("P:/old_show/textures/missing.exr"),
+                _reference(
+                    "P:/old_show/cache/out.$F4.bgeo.sc",
+                    parm_path="/obj/geo1/filecache1/sopoutput",
+                    can_update=False,
+                    reference_role=ReferenceRole.GENERATED_OUTPUT.value,
+                    path_family="P:/old_show/cache",
+                ),
+            ]
+        )
+
+        assert relinker._proxy_model.rowCount() == 1
+        status_index = relinker._reference_model.index(1, 0)
+        role_index = relinker._reference_model.index(1, 2)
+        note_index = relinker._reference_model.index(1, 9)
+        assert relinker._reference_model.data(status_index) == "Generated output"
+        assert relinker._reference_model.data(role_index) == "Generated output"
+        assert relinker._reference_model.data(note_index) == (
+            "Generated output path kept for context"
+        )
+
+        relinker.missing_only_check.setChecked(False)
+        relinker.writable_only_check.setChecked(False)
+        assert relinker._proxy_model.rowCount() == 2
+        _select_reference_by_raw_path(relinker, "P:/old_show/cache/out.$F4.bgeo.sc")
+        relinker._selection_changed()
+        detail_text = relinker.detail_text.toPlainText()
+        assert "Role: generated_output" in detail_text
+        assert "Status: generated output" in detail_text
+        assert "Generated output path kept for context" in detail_text
+        assert "1 broken targets" in relinker.summary_label.text()
+        assert "1 generated outputs" in relinker.summary_label.text()
+    finally:
+        relinker.close()
+
+
 def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
     """It disables Apply when replacement settings diverge from the preview."""
     relinker_window.find_edit.setText("P:/old_show")
@@ -209,7 +261,7 @@ def test_replacement_input_change_invalidates_preview(relinker_window) -> None:
     assert relinker_window._preview_request == ReplaceRequest(
         find_text="P:/old_show",
         replace_with="P:/new_show",
-        case_sensitive=True,
+        case_sensitive=False,
         include_hda_libraries=False,
         uninstall_old_hda_libraries=False,
         scope=SCOPE_VISIBLE_ROWS,
@@ -266,12 +318,55 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, relinker_window) -> 
         ReplaceRequest(
             find_text="P:/old_show",
             replace_with="P:/new_show",
-            case_sensitive=True,
+            case_sensitive=False,
             include_hda_libraries=False,
             uninstall_old_hda_libraries=False,
             scope=SCOPE_VISIBLE_ROWS,
         )
     ]
+
+
+def test_preview_defaults_to_case_insensitive_windows_paths(relinker_window) -> None:
+    """It previews relinks when Windows-style path casing differs."""
+    relinker_window._reference_model.set_references([_reference("P:/OLD_SHOW/Cache/a.bgeo.sc")])
+    relinker_window.find_edit.setText("p:/old_show/cache")
+    relinker_window.replace_edit.setText("P:/new_show/cache")
+
+    relinker_window.preview_replace()
+
+    assert relinker_window._preview_request == ReplaceRequest(
+        find_text="p:/old_show/cache",
+        replace_with="P:/new_show/cache",
+        case_sensitive=False,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
+    )
+    assert relinker_window.apply_button.isEnabled()
+    assert relinker_window._current_report is not None
+    assert relinker_window._current_report.results[0].new_path == ("P:/new_show/cache/a.bgeo.sc")
+
+
+def test_exact_case_checkbox_skips_case_mismatched_preview(relinker_window) -> None:
+    """It keeps exact-case matching as an opt-in."""
+    relinker_window._reference_model.set_references([_reference("P:/OLD_SHOW/Cache/a.bgeo.sc")])
+    relinker_window.find_edit.setText("p:/old_show/cache")
+    relinker_window.replace_edit.setText("P:/new_show/cache")
+    relinker_window.case_sensitive_check.setChecked(True)
+
+    relinker_window.preview_replace()
+
+    assert relinker_window._preview_request == ReplaceRequest(
+        find_text="p:/old_show/cache",
+        replace_with="P:/new_show/cache",
+        case_sensitive=True,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
+    )
+    assert not relinker_window.apply_button.isEnabled()
+    assert relinker_window._current_report is not None
+    assert relinker_window._current_report.results == ()
 
 
 def test_visible_scope_previews_only_filtered_rows(relinker_window) -> None:

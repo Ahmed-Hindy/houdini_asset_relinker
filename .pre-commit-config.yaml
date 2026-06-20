@@ -6,7 +6,7 @@ repos:
         entry: uv --system-certs lock --check
         language: system
         pass_filenames: false
-        files: ^(pyproject\.toml|uv\.lock)$
+        always_run: true
 
       - id: ruff-check
         name: ruff check

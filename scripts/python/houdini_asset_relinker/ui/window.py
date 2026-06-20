@@ -22,7 +22,7 @@ from houdini_asset_relinker.models import (
     normalized_reference_role,
 )
 from houdini_asset_relinker.path_utils import matches_find_text, normalize_for_compare
-from houdini_asset_relinker.qt import QtCore, QtWidgets
+from houdini_asset_relinker.qt import QtCore, QtGui, QtWidgets
 from houdini_asset_relinker.scanner import scan_assets
 from houdini_asset_relinker.ui.houdini import (
     default_export_path,
@@ -45,12 +45,20 @@ from houdini_asset_relinker.ui.qt_constants import (
     SINGLE_SELECTION,
     WAIT_CURSOR,
 )
-from houdini_asset_relinker.ui.style import ASSET_RELINKER_STYLESHEET
+from houdini_asset_relinker.ui.style import (
+    ASSET_RELINKER_STYLESHEET,
+    REPORT_TABLE_ALT_BASE_COLOR,
+    REPORT_TABLE_BASE_COLOR,
+    STATUS_COLOR_MISSING,
+    STATUS_COLOR_NOT_UPDATABLE,
+    STATUS_COLOR_READY,
+)
 from houdini_asset_relinker.ui.table_models import (
     ReferenceFilterProxy,
     ReferenceTableModel,
     UpdateResultTableModel,
 )
+from houdini_asset_relinker.ui.widgets import StatusColorDelegate
 from houdini_asset_relinker.updater import replace_hda_library_paths, replace_path_text
 
 WINDOW_OBJECT_NAME = "houdiniAssetRelinkerWindow"
@@ -91,6 +99,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._preview_report: Optional[UpdateReport] = None
         self._preview_request: Optional[ReplaceRequest] = None
         self._preview_references: tuple[AssetReference, ...] = ()
+        self._applied_request: Optional[ReplaceRequest] = None
         self._current_report: Optional[UpdateReport] = None
         self._live_relink_preview_depth = 0
         self._live_relink_preview_timer = QtCore.QTimer(self)
@@ -102,7 +111,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._connect_signals()
         self._set_status("Ready. Scan the current Houdini session to begin.")
 
-    def scan(self) -> None:
+    def scan(self, clear_report: bool = True) -> None:
         """Scan the current Houdini session and update the reference table."""
         self._set_busy(True)
         try:
@@ -119,9 +128,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self._set_busy(False)
 
         self._reference_model.set_references(references)
-        self._clear_report()
+        if clear_report:
+            self._clear_report()
         self._update_find_match_highlight()
-        self._run_scheduled_live_relink_preview()
+        if clear_report:
+            self._run_scheduled_live_relink_preview()
         self._update_summary()
         output_count = sum(is_generated_output(reference) for reference in references)
         context_note = (
@@ -150,8 +161,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self,
             "Apply Asset Relinks",
             (
-                "This will update writable Houdini parameters"
-                " and selected HDA library references in the current session.\n\n"
+                "This will update Houdini parameters"
+                " and selected HDA libraries.\n\n"
                 "Save a copy of the hip file before applying large relinks."
             ),
             MESSAGE_OK | MESSAGE_CANCEL,
@@ -176,7 +187,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._preview_report = None
         self._preview_request = None
         self._preview_references = ()
-        self.scan()
+        self._applied_request = preview_request
+        self.scan(clear_report=False)
         self._current_report = report
         self._report_model.set_report(report)
         self.apply_button.setEnabled(False)
@@ -401,6 +413,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.setSelectionMode(SINGLE_SELECTION)
         self.reference_table.setAlternatingRowColors(True)
         self.reference_table.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
+        self.reference_table.setItemDelegate(StatusColorDelegate(self.reference_table))
         self._configure_table_scrolling(self.reference_table)
         self.reference_table.verticalHeader().setVisible(False)
         self.reference_table.horizontalHeader().setStretchLastSection(True)
@@ -495,18 +508,39 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.copy_report_button)
         layout.addLayout(button_row)
 
+        legend_row = QtWidgets.QHBoxLayout()
+        legend_row.setContentsMargins(0, 0, 0, 0)
+        legend_row.setSpacing(12)
+        for label_text, color in (
+            ("Change", STATUS_COLOR_READY),
+            ("Skipped", STATUS_COLOR_NOT_UPDATABLE),
+            ("Failed", STATUS_COLOR_MISSING),
+        ):
+            item = QtWidgets.QHBoxLayout()
+            item.setSpacing(6)
+            swatch = QtWidgets.QFrame(self)
+            swatch.setFixedSize(12, 12)
+            swatch.setStyleSheet(f"background: {color}; border-radius: 2px;")
+            label = QtWidgets.QLabel(label_text, self)
+            label.setObjectName("summaryLabel")
+            item.addWidget(swatch)
+            item.addWidget(label)
+            legend_row.addLayout(item)
+        legend_row.addStretch(1)
+        layout.addLayout(legend_row)
+
         self.report_table = QtWidgets.QTableView(self)
         self.report_table.setModel(self._report_model)
-        self.report_table.setAlternatingRowColors(True)
+        self.report_table.setAlternatingRowColors(False)
+        self.report_table.setItemDelegate(StatusColorDelegate(self.report_table))
         self._configure_table_scrolling(self.report_table)
         self.report_table.verticalHeader().setVisible(False)
         self.report_table.horizontalHeader().setStretchLastSection(True)
         self.report_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
-        self.report_table.setColumnWidth(0, 90)
-        self.report_table.setColumnWidth(1, 180)
-        self.report_table.setColumnWidth(2, 250)
-        self.report_table.setColumnWidth(3, 250)
-        self.report_table.setToolTip("Preview and apply results for the latest relink operation.")
+        self.report_table.setColumnWidth(0, 200)
+        self.report_table.setColumnWidth(1, 280)
+        self.report_table.setColumnWidth(2, 280)
+        self.report_table.setToolTip("Preview and apply relinking.")
         layout.addWidget(self.report_table, 1)
         return panel
 
@@ -526,6 +560,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         table.setHorizontalScrollMode(SCROLL_PER_PIXEL)
         table.verticalScrollBar().setSingleStep(24)
         table.horizontalScrollBar().setSingleStep(32)
+
+        palette = table.palette()
+        palette.setColor(QtGui.QPalette.Base, QtGui.QColor(REPORT_TABLE_BASE_COLOR))
+        palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(REPORT_TABLE_ALT_BASE_COLOR))
+        table.setPalette(palette)
 
     def _connect_signals(self) -> None:
         self.copy_path_action.triggered.connect(self.copy_selected_reference_path)
@@ -779,6 +818,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._live_relink_preview_depth += 1
         try:
             request = self._current_replace_request()
+            if self._current_report is not None and not self._current_report.dry_run:
+                if request == self._applied_request:
+                    return
+                self._applied_request = None
+
             if not request.find_text.strip():
                 self._clear_report()
                 return
@@ -827,6 +871,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._preview_request = None
         self._preview_references = ()
         self._current_report = None
+        self._applied_request = None
         self._report_model.set_report(None)
         self.apply_button.setEnabled(False)
         self.copy_report_button.setEnabled(False)

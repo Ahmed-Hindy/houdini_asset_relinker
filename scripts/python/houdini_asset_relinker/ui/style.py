@@ -50,12 +50,13 @@ QPushButton#secondaryButton:hover {
     background: #3a4650;
 }
 QTableView {
-    background: #17191c;
-    alternate-background-color: #1d2024;
     border: 1px solid #343a40;
     gridline-color: #30363c;
     selection-background-color: #365577;
     selection-color: #ffffff;
+}
+QTableView::viewport {
+    background: #17191c;
 }
 QHeaderView::section {
     background: #2d3339;
@@ -113,3 +114,6 @@ STATUS_COLOR_UNDEFINED_VARIABLE = "#d9a800"
 STATUS_COLOR_MISSING = "#d9534f"
 STATUS_COLOR_NOT_UPDATABLE = "#d99000"
 FIND_MATCH_ROW_COLOR = "#2a3544"
+REPORT_TABLE_BASE_COLOR = "#17191c"
+REPORT_TABLE_ALT_BASE_COLOR = "#1d2024"
+REPORT_STATUS_TINT_MIX = 0.34

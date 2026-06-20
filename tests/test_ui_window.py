@@ -16,6 +16,7 @@ from houdini_asset_relinker.models import (
     UpdateReport,
     UpdateResult,
 )
+from houdini_asset_relinker.qt import QtGui
 from houdini_asset_relinker.ui import window as window_module
 from houdini_asset_relinker.ui.qt_constants import (
     BACKGROUND_ROLE,
@@ -223,7 +224,7 @@ def test_report_table_model_uses_row_tints_and_readable_tooltips(qt_app) -> None
     assert model.data(model.index(0, 0)) == "/obj/geo1/file"
 
     expected = (
-        ("Planned change", STATUS_COLOR_READY),
+        ("Planned change", None),
         ("Skipped", STATUS_COLOR_NOT_UPDATABLE),
         ("Failed", STATUS_COLOR_MISSING),
     )
@@ -235,11 +236,16 @@ def test_report_table_model_uses_row_tints_and_readable_tooltips(qt_app) -> None
             assert brush is not None
             color = brush.color()
             assert color.alpha() == 255
-            expected_color = _blend_hex_color(
-                REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR,
-                status_color,
-                REPORT_STATUS_TINT_MIX,
-            )
+            if status_color is None:
+                expected_color = QtGui.QColor(
+                    REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR
+                )
+            else:
+                expected_color = _blend_hex_color(
+                    REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR,
+                    status_color,
+                    REPORT_STATUS_TINT_MIX,
+                )
             assert color.name() == expected_color.name()
 
 

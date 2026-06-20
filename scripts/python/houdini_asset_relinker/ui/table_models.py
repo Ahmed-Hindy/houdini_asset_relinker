@@ -309,13 +309,15 @@ def _result_status_label(result: UpdateResult) -> str:
     return result.status
 
 
-def _result_status_color(result: UpdateResult) -> str:
+def _result_status_color(result: UpdateResult) -> Optional[str]:
     """Return the status accent color for an update result."""
     if result.status == "failed":
         return STATUS_COLOR_MISSING
     if result.status == "skipped":
         return STATUS_COLOR_NOT_UPDATABLE
-    return STATUS_COLOR_READY
+    if result.status == "changed":
+        return STATUS_COLOR_READY
+    return None
 
 
 def _blend_hex_color(base_hex: str, accent_hex: str, mix: float) -> QtGui.QColor:
@@ -334,7 +336,10 @@ def _blend_hex_color(base_hex: str, accent_hex: str, mix: float) -> QtGui.QColor
 def _result_status_tint_brush(result: UpdateResult, row: int) -> QtGui.QBrush:
     """Return an opaque row background tint for an update result."""
     base = REPORT_TABLE_ALT_BASE_COLOR if row % 2 else REPORT_TABLE_BASE_COLOR
-    color = _blend_hex_color(base, _result_status_color(result), REPORT_STATUS_TINT_MIX)
+    accent = _result_status_color(result)
+    if accent is None:
+        return QtGui.QBrush(QtGui.QColor(base))
+    color = _blend_hex_color(base, accent, REPORT_STATUS_TINT_MIX)
     return QtGui.QBrush(color)
 
 

@@ -50,12 +50,13 @@ QPushButton#secondaryButton:hover {
     background: #3a4650;
 }
 QTableView {
-    background: #17191c;
-    alternate-background-color: #1d2024;
     border: 1px solid #343a40;
     gridline-color: #30363c;
     selection-background-color: #365577;
     selection-color: #ffffff;
+}
+QTableView::viewport {
+    background: #17191c;
 }
 QHeaderView::section {
     background: #2d3339;

@@ -452,7 +452,7 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
         )
 
     monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
-    monkeypatch.setattr(relinker_window, "scan", lambda: None)
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         window_module.QtWidgets.QMessageBox,
         "warning",
@@ -657,7 +657,7 @@ def test_apply_uses_current_live_preview_scope(monkeypatch, qt_app, relinker_win
         )
 
     monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
-    monkeypatch.setattr(relinker_window, "scan", lambda: None)
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         window_module.QtWidgets.QMessageBox,
         "warning",
@@ -738,3 +738,105 @@ def test_find_match_label_hides_when_find_is_empty(relinker_window) -> None:
 
     assert relinker_window.find_match_label.isHidden()
     assert relinker_window.find_match_label.text() == ""
+
+
+def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_window) -> None:
+    """It retains the applied report and its row colors after apply_replace is run, even after event
+    loop tick."""
+    relinker_window.reference_table.selectRow(0)
+    _set_scope(relinker_window, SCOPE_SELECTED_ROW)
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("P:/new_show")
+    _flush_live_relink_preview(qt_app)
+
+    new_ref = _reference("P:/new_show/cache/a.bgeo.sc")
+    monkeypatch.setattr(window_module, "scan_assets", lambda **kwargs: [new_ref])
+
+    def fake_build_replace_report(
+        request: ReplaceRequest,
+        references: list[AssetReference],
+        dry_run: bool,
+    ) -> UpdateReport:
+        if dry_run:
+            return UpdateReport(
+                dry_run=True,
+                results=(
+                    UpdateResult(
+                        status="would_change",
+                        old_path="P:/old_show/cache/a.bgeo.sc",
+                        new_path="P:/new_show/cache/a.bgeo.sc",
+                        parm_path="/obj/geo1/file/file",
+                    ),
+                ),
+            )
+        return UpdateReport(
+            dry_run=False,
+            results=(
+                UpdateResult(
+                    status="changed",
+                    old_path="P:/old_show/cache/a.bgeo.sc",
+                    new_path="P:/new_show/cache/a.bgeo.sc",
+                    parm_path="/obj/geo1/file/file",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    # Flush the event loop to ensure any queued live preview timer fires
+    _flush_live_relink_preview(qt_app)
+
+    # The applied report should still be set and not cleared by the live preview!
+    assert relinker_window._current_report is not None
+    assert not relinker_window._current_report.dry_run
+    assert len(relinker_window._current_report.results) == 1
+    assert relinker_window._current_report.results[0].status == "changed"
+
+    # Verify the table view row background colors are green (opaque blended green)
+    model = relinker_window._report_model
+    assert model.rowCount() == 1
+    brush = model.data(model.index(0, 0), BACKGROUND_ROLE)
+    assert brush is not None
+    color = brush.color()
+    expected_color = _blend_hex_color(
+        REPORT_TABLE_BASE_COLOR,
+        STATUS_COLOR_READY,
+        REPORT_STATUS_TINT_MIX,
+    )
+    assert color.name() == expected_color.name()
+
+
+def test_status_color_delegate_paints_successfully(qt_app) -> None:
+    """It paints items with a background color brush and bypasses stylesheet overrides."""
+    del qt_app
+    from houdini_asset_relinker.qt import QtCore, QtGui, QtWidgets
+    from houdini_asset_relinker.ui.widgets import StatusColorDelegate
+
+    delegate = StatusColorDelegate()
+
+    # Create a table view and model to generate a valid index
+    table = QtWidgets.QTableView()
+    model = QtGui.QStandardItemModel(1, 1)
+    # Set BACKGROUND_ROLE brush
+    model.setData(model.index(0, 0), QtGui.QBrush(QtGui.QColor("#ff0000")), BACKGROUND_ROLE)
+    table.setModel(model)
+
+    # Construct options
+    option = QtWidgets.QStyleOptionViewItem()
+    option.rect = QtCore.QRect(0, 0, 100, 30)
+
+    # Create a dummy painter
+    pixmap = QtGui.QPixmap(100, 30)
+    painter = QtGui.QPainter(pixmap)
+    try:
+        # Paint should execute without errors
+        delegate.paint(painter, option, model.index(0, 0))
+    finally:
+        painter.end()

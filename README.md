@@ -46,10 +46,11 @@ Once installed by your pipeline TD, you will find the tool on your Houdini shelf
 Once scanned, you will see a list of references with statuses:
 
 - 🟢 **Ready**: The file exists and is located at the correct path.
-- 🔴 **Missing**: The file cannot be found on disk.
+- 🔴 **Missing**: An inbound dependency cannot be found on disk.
 - 🟡 **Undefined variable**: The path contains an environment variable that is not set in the current session.
+- 🟠 **Generated output**: A render/cache/export destination is kept visible for context but is not treated as a broken relink target.
 
-Use the search bar at the top to filter paths by node names, parameters, or path text. Check **Missing only** to focus purely on broken assets.
+Use the search bar at the top to filter paths by node names, parameters, or path text. Check **Broken targets** to focus on inbound dependencies that need relinking.
 
 ### Step 3: Find & Replace Paths
 
@@ -67,5 +68,5 @@ To update multiple paths at once:
 
 - **Backup**: Always save a backup copy of your `.hip` file before applying large path replacements.
 - **Use Preview**: Always click **Preview** first and review the target list to make sure you are only modifying the intended nodes.
-- **Locked Nodes**: The tool will not edit parameters inside locked assets (which are read-only).
+- **Limit Scope**: Keep the relink scope on the smallest useful target set before previewing and applying.
 - **HDA Uninstall**: When relinking HDA libraries, checking *Uninstall old HDA libraries* will automatically clean up the old library paths from the session.

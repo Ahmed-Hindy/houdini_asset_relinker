@@ -12,7 +12,15 @@ from typing import Optional
 from houdini_asset_relinker import __version__
 from houdini_asset_relinker.export import write_references_csv
 from houdini_asset_relinker.hou_access import get_hou
-from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
+from houdini_asset_relinker.models import (
+    AssetReference,
+    ReferenceKind,
+    UpdateReport,
+    UpdateResult,
+    is_broken_relink_target,
+    is_generated_output,
+    normalized_reference_role,
+)
 from houdini_asset_relinker.path_utils import normalize_for_compare
 from houdini_asset_relinker.qt import QtCore, QtWidgets
 from houdini_asset_relinker.scanner import scan_assets
@@ -45,7 +53,7 @@ from houdini_asset_relinker.ui.table_models import (
 from houdini_asset_relinker.updater import replace_hda_library_paths, replace_path_text
 
 WINDOW_OBJECT_NAME = "houdiniAssetRelinkerWindow"
-REFERENCE_PATH_FAMILY_COLUMN = 4
+REFERENCE_PATH_FAMILY_COLUMN = 5
 SCOPE_VISIBLE_ROWS = "visible_rows"
 SCOPE_SELECTED_ROW = "selected_row"
 SCOPE_PATH_FAMILY = "path_family"
@@ -108,7 +116,11 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._reference_model.set_references(references)
         self._clear_report()
         self._update_summary()
-        self._set_status(f"Scanned {len(references)} references.")
+        output_count = sum(is_generated_output(reference) for reference in references)
+        context_note = (
+            f" ({output_count} generated outputs kept for context)" if output_count else ""
+        )
+        self._set_status(f"Scanned {len(references)} references{context_note}.")
         if references:
             self.reference_table.selectRow(0)
 
@@ -360,8 +372,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.search_edit.setMinimumWidth(260)
         self.search_edit.setPlaceholderText("Filter by node, parameter, path, or note")
         self.search_edit.setToolTip("Filter references by node, parameter, path, kind, or note.")
-        self.missing_only_check = QtWidgets.QCheckBox("Missing only", self)
-        self.missing_only_check.setToolTip("Show only references whose expanded paths are missing.")
+        self.missing_only_check = QtWidgets.QCheckBox("Broken targets", self)
+        self.missing_only_check.setToolTip(
+            "Show only inbound relink targets that are missing or use undefined variables."
+        )
         self.missing_only_check.setChecked(True)
         self.writable_only_check = QtWidgets.QCheckBox("Writable only", self)
         self.writable_only_check.setToolTip("Show only references the relinker can update.")
@@ -393,7 +407,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         table_action_row.setContentsMargins(0, 0, 0, 0)
         table_action_row.setSpacing(8)
         self.summary_label = QtWidgets.QLabel(
-            "0 total | 0 missing | 0 writable | 0 HDA | 0 visible",
+            "0 total | 0 broken targets | 0 generated outputs | 0 writable | 0 HDA | 0 visible",
             self,
         )
         self.summary_label.setObjectName("summaryLabel")
@@ -418,12 +432,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.horizontalHeader().setSectionResizeMode(HEADER_INTERACTIVE)
         self.reference_table.setColumnWidth(0, 120)
         self.reference_table.setColumnWidth(1, 65)
-        self.reference_table.setColumnWidth(2, 190)
-        self.reference_table.setColumnWidth(3, 100)
-        self.reference_table.setColumnWidth(4, 220)
-        self.reference_table.setColumnWidth(5, 300)
+        self.reference_table.setColumnWidth(2, 130)
+        self.reference_table.setColumnWidth(3, 190)
+        self.reference_table.setColumnWidth(4, 100)
+        self.reference_table.setColumnWidth(5, 220)
         self.reference_table.setColumnWidth(6, 300)
-        self.reference_table.setColumnWidth(8, 600)
+        self.reference_table.setColumnWidth(7, 300)
+        self.reference_table.setColumnWidth(9, 600)
         self.reference_table.setToolTip(
             "Right-click a reference to copy its path, reveal it on disk, or select its node."
         )
@@ -445,7 +460,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         form = QtWidgets.QFormLayout()
         self.find_edit = QtWidgets.QLineEdit(self)
         self.find_edit.setPlaceholderText("P:/old_show or $JOB/assets")
-        self.find_edit.setToolTip("Path text to find in writable references.")
+        self.find_edit.setToolTip(
+            "Path text to find in writable references. Matching ignores letter case by default."
+        )
         self.replace_edit = QtWidgets.QLineEdit(self)
         self.replace_edit.setPlaceholderText("P:/new_show or $HIP/assets")
         self.replace_edit.setToolTip("Replacement text to write into matching references.")
@@ -462,9 +479,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         form.addRow("Scope", self.scope_combo)
         layout.addLayout(form)
 
-        self.case_sensitive_check = QtWidgets.QCheckBox("Case sensitive", self)
+        self.case_sensitive_check = QtWidgets.QCheckBox("Exact case only", self)
         self.case_sensitive_check.setChecked(False)
-        self.case_sensitive_check.setToolTip("Match path text using exact letter case.")
+        self.case_sensitive_check.setToolTip(
+            "Opt in to exact letter-case matching. Leave off for common Windows path casing "
+            "differences."
+        )
         self.include_hda_replace_check = QtWidgets.QCheckBox("Relink HDA libraries too", self)
         self.include_hda_replace_check.setChecked(False)
         self.include_hda_replace_check.setToolTip(
@@ -483,7 +503,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         self.preview_button = QtWidgets.QPushButton("Preview", self)
         self.preview_button.setObjectName("primaryButton")
-        self.preview_button.setToolTip("Preview relink changes without modifying the scene.")
+        self.preview_button.setToolTip(
+            "Preview case-insensitive relink changes without modifying the scene."
+        )
         self.apply_button = QtWidgets.QPushButton("Apply", self)
         self.apply_button.setObjectName("applyButton")
         self.apply_button.setEnabled(False)
@@ -582,6 +604,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             return
         lines = [
             f"Kind: {reference.kind.value}",
+            f"Role: {normalized_reference_role(reference)}",
             f"Status: {_reference_status_text(reference)}",
             f"Writable: {'yes' if reference.can_update else 'no'}",
             f"Node: {reference.node_path or ''}",
@@ -629,13 +652,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _update_summary(self, *_args: object) -> None:
         references = self._reference_model.references()
-        missing_count = sum(not reference.exists for reference in references)
+        broken_count = sum(is_broken_relink_target(reference) for reference in references)
+        output_count = sum(is_generated_output(reference) for reference in references)
         undefined_count = sum(bool(reference.missing_variables) for reference in references)
         writable_count = sum(reference.can_update for reference in references)
         hda_count = sum(reference.kind == ReferenceKind.HDA_LIBRARY for reference in references)
         self.summary_label.setText(
-            f"{len(references)} total | {missing_count} missing | "
-            f"{undefined_count} undefined vars | {writable_count} writable | {hda_count} HDA | "
+            f"{len(references)} total | {broken_count} broken targets | "
+            f"{output_count} generated outputs | {undefined_count} undefined vars | "
+            f"{writable_count} writable | {hda_count} HDA | "
             f"{self._proxy_model.rowCount()} visible"
         )
         self.export_button.setEnabled(bool(references))
@@ -670,8 +695,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             return [
                 reference
                 for reference in self._reference_model.references()
-                if reference.can_update
-                and (not reference.exists or reference.missing_variables)
+                if is_broken_relink_target(reference)
                 and _path_is_under_or_equal(reference.raw_path, request.find_text)
             ]
         return self._reference_model.references()
@@ -810,6 +834,8 @@ def _exec_dialog(target: object, *args: object) -> int:
 
 def _reference_status_text(reference: AssetReference) -> str:
     """Return the selected-reference status text."""
+    if is_generated_output(reference):
+        return "generated output"
     if reference.missing_variables:
         return "undefined variable"
     if not reference.exists:
@@ -821,6 +847,8 @@ def _reference_status_text(reference: AssetReference) -> str:
 
 def _reference_note_text(reference: AssetReference) -> str:
     """Return the selected-reference note text."""
+    if is_generated_output(reference):
+        return reference.reason or "Generated output path kept for context."
     if reference.missing_variables:
         return f"Undefined variables: {', '.join(reference.missing_variables)}"
     return reference.reason or ""

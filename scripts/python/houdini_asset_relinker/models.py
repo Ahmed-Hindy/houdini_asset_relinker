@@ -21,6 +21,14 @@ class ReferenceKind(str, Enum):
     HDA_LIBRARY = "hda_library"
 
 
+class ReferenceRole(str, Enum):
+    """How a scanned path participates in the relink workflow."""
+
+    INBOUND_DEPENDENCY = "inbound_dependency"
+    GENERATED_OUTPUT = "generated_output"
+    HDA_LIBRARY = "hda_library"
+
+
 @dataclass(frozen=True)
 class AssetReference:
     """A single external asset reference found in the current Houdini session.
@@ -38,6 +46,7 @@ class AssetReference:
         node_path: Full Houdini node path owning the parameter.
         node_type: Houdini node type name when available.
         path_role: Triage role inferred from the parameter/path context.
+        reference_role: Whether the path is an inbound dependency, output, or HDA.
         missing_variables: Houdini variables in the raw path that did not resolve.
         can_update: Whether the tool can update this reference directly.
         reason: Human-readable reason when the reference cannot be directly updated.
@@ -55,6 +64,7 @@ class AssetReference:
     node_path: Optional[str] = None
     node_type: str = ""
     path_role: str = ""
+    reference_role: str = ""
     missing_variables: tuple[str, ...] = ()
     can_update: bool = False
     reason: str = ""
@@ -62,11 +72,13 @@ class AssetReference:
     def to_row(self) -> dict[str, object]:
         """Return a serializable row for CSV, JSON, or table display."""
         path_role = self.path_role or _infer_path_role(self)
+        reference_role = normalized_reference_role(self)
         path_for_root = (
             self.raw_path if self.missing_variables else self.expanded_path or self.raw_path
         )
         return {
             "kind": self.kind.value,
+            "reference_role": reference_role,
             "node_path": self.node_path or "",
             "node_type": self.node_type,
             "parm_path": self.parm_path or "",
@@ -81,10 +93,11 @@ class AssetReference:
             "exists": self.exists,
             "path_family": self.path_family or path_family(self.raw_path),
             "can_update": self.can_update,
+            "broken_relink_target": is_broken_relink_target(self),
             "diagnosis": _diagnosis(self),
             "missing_variables": ";".join(self.missing_variables),
             "reason": self.reason,
-            "suggested_action": _suggested_action(self, path_role),
+            "suggested_action": _suggested_action(self, path_role, reference_role),
         }
 
 
@@ -161,8 +174,33 @@ def rows_from_references(references: Iterable[AssetReference]) -> list[dict[str,
     return [reference.to_row() for reference in references]
 
 
+def normalized_reference_role(reference: AssetReference) -> str:
+    """Return the effective high-level role for a scanned reference."""
+    if reference.reference_role:
+        return reference.reference_role
+    if reference.kind == ReferenceKind.HDA_LIBRARY:
+        return ReferenceRole.HDA_LIBRARY.value
+    return ReferenceRole.INBOUND_DEPENDENCY.value
+
+
+def is_generated_output(reference: AssetReference) -> bool:
+    """Return whether a reference is a generated-output path kept for context."""
+    return normalized_reference_role(reference) == ReferenceRole.GENERATED_OUTPUT.value
+
+
+def is_broken_relink_target(reference: AssetReference) -> bool:
+    """Return whether a row should be treated as a broken path relink target."""
+    return (
+        not is_generated_output(reference)
+        and reference.can_update
+        and (not reference.exists or bool(reference.missing_variables))
+    )
+
+
 def _diagnosis(reference: AssetReference) -> str:
     """Return a compact triage diagnosis for a reference."""
+    if is_generated_output(reference):
+        return "generated_output_missing" if not reference.exists else "generated_output"
     if reference.missing_variables:
         return "undefined_variable"
     if reference.kind == ReferenceKind.HDA_LIBRARY and reference.raw_path == "Embedded":
@@ -174,8 +212,10 @@ def _diagnosis(reference: AssetReference) -> str:
     return "ready"
 
 
-def _suggested_action(reference: AssetReference, path_role: str) -> str:
+def _suggested_action(reference: AssetReference, path_role: str, reference_role: str) -> str:
     """Return a short next-step suggestion for CSV triage."""
+    if reference_role == ReferenceRole.GENERATED_OUTPUT.value:
+        return "Keep for context; update the producing node only if this output path is wrong."
     if reference.missing_variables:
         return "Define missing variables or replace the unresolved path root."
     if reference.kind == ReferenceKind.HDA_LIBRARY and reference.raw_path == "Embedded":

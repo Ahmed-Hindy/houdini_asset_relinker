@@ -6,7 +6,13 @@ from collections.abc import Iterable
 from typing import Optional
 
 from houdini_asset_relinker.hou_access import get_hou
-from houdini_asset_relinker.models import AssetReference, ReferenceKind, UpdateReport, UpdateResult
+from houdini_asset_relinker.models import (
+    AssetReference,
+    ReferenceKind,
+    UpdateReport,
+    UpdateResult,
+    is_generated_output,
+)
 from houdini_asset_relinker.path_utils import replace_root, replace_text
 from houdini_asset_relinker.scanner import scan_assets, scan_hda_libraries
 
@@ -16,7 +22,7 @@ def replace_path_text(
     replace_with: str,
     dry_run: bool = True,
     references: Optional[Iterable[AssetReference]] = None,
-    case_sensitive: bool = True,
+    case_sensitive: bool = False,
 ) -> UpdateReport:
     """Replace text in all writable file parameter paths.
 
@@ -25,7 +31,8 @@ def replace_path_text(
         replace_with: Replacement text.
         dry_run: When True, report what would change without modifying the scene.
         references: Optional pre-scanned references. When omitted, the current scene is scanned.
-        case_sensitive: Whether matching should be case-sensitive.
+        case_sensitive: Whether matching should require exact letter case. By default,
+            matching ignores casing differences common in Windows paths.
 
     Returns:
         An update report.
@@ -36,6 +43,8 @@ def replace_path_text(
     results = []
     for reference in current_references:
         if reference.kind != ReferenceKind.FILE_PARAMETER:
+            continue
+        if is_generated_output(reference):
             continue
         new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
         if new_path is None:
@@ -68,6 +77,8 @@ def replace_path_root(
     for reference in current_references:
         if reference.kind != ReferenceKind.FILE_PARAMETER:
             continue
+        if is_generated_output(reference):
+            continue
         new_path = replace_root(reference.raw_path, old_root, new_root)
         if new_path is None:
             continue
@@ -81,7 +92,7 @@ def replace_hda_library_paths(
     dry_run: bool = True,
     uninstall_old: bool = False,
     references: Optional[Iterable[AssetReference]] = None,
-    case_sensitive: bool = True,
+    case_sensitive: bool = False,
 ) -> UpdateReport:
     """Replace loaded HDA library file paths in the current Houdini session.
 
@@ -91,7 +102,8 @@ def replace_hda_library_paths(
         dry_run: When True, report what would change without modifying the session.
         uninstall_old: When applying, uninstall old libraries after installing replacements.
         references: Optional pre-scanned references. When omitted, loaded HDA libraries are scanned.
-        case_sensitive: Whether matching should be case-sensitive.
+        case_sensitive: Whether matching should require exact letter case. By default,
+            matching ignores casing differences common in Windows paths.
 
     Returns:
         An update report.

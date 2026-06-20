@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from houdini_asset_relinker.models import AssetReference, ReferenceKind
+from houdini_asset_relinker.models import AssetReference, ReferenceKind, ReferenceRole
 from houdini_asset_relinker.updater import (
     replace_hda_library_paths,
     replace_path_root,
@@ -55,6 +55,33 @@ def test_replace_path_text_dry_run_does_not_touch_houdini() -> None:
     assert report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
 
 
+def test_replace_path_text_defaults_to_case_insensitive_windows_paths() -> None:
+    """It relinks Windows-style paths when only the drive or folder casing differs."""
+    report = replace_path_text(
+        "p:/old_show/cache",
+        "P:/new_show/cache",
+        dry_run=True,
+        references=[_reference("P:/OLD_SHOW/Cache/a.bgeo.sc")],
+    )
+
+    assert report.changed_count == 1
+    assert report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
+
+
+def test_replace_path_text_exact_case_opt_in_skips_case_mismatch() -> None:
+    """It leaves case-mismatched Windows-style paths alone when exact case is requested."""
+    report = replace_path_text(
+        "p:/old_show/cache",
+        "P:/new_show/cache",
+        dry_run=True,
+        case_sensitive=True,
+        references=[_reference("P:/OLD_SHOW/Cache/a.bgeo.sc")],
+    )
+
+    assert report.changed_count == 0
+    assert report.results == ()
+
+
 def test_replace_path_text_apply_sets_houdini_parameter(monkeypatch) -> None:
     """It applies matching updates to the referenced Houdini parameter."""
     parm = FakeParm()
@@ -85,6 +112,31 @@ def test_replace_path_root_skips_non_matching_paths() -> None:
 
     assert report.changed_count == 0
     assert report.results == ()
+
+
+def test_replace_path_text_skips_generated_output_context_rows() -> None:
+    """It does not preview generated outputs as relink targets."""
+    report = replace_path_text(
+        "P:/old_show",
+        "P:/new_show",
+        dry_run=True,
+        references=[
+            _reference("P:/old_show/textures/diffuse.exr"),
+            AssetReference(
+                kind=ReferenceKind.FILE_PARAMETER,
+                reference_role=ReferenceRole.GENERATED_OUTPUT.value,
+                raw_path="P:/old_show/cache/out.$F4.bgeo.sc",
+                expanded_path="P:/old_show/cache/out.1052.bgeo.sc",
+                exists=False,
+                sequence_pattern="P:/old_show/cache/out.*.bgeo.sc",
+                parm_path="/obj/geo1/filecache1/sopoutput",
+                node_path="/obj/geo1/filecache1",
+                can_update=False,
+            ),
+        ],
+    )
+
+    assert [result.old_path for result in report.results] == ["P:/old_show/textures/diffuse.exr"]
 
 
 def test_replace_path_text_reports_missing_parameter_on_apply(monkeypatch) -> None:

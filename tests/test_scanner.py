@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from houdini_asset_relinker.models import ReferenceKind
+from houdini_asset_relinker.models import ReferenceKind, ReferenceRole
 from houdini_asset_relinker.path_utils import path_family
 from houdini_asset_relinker.scanner import scan_assets, scan_file_references
 
@@ -195,6 +195,31 @@ def test_scan_file_references_marks_locked_parms_as_not_updatable(
 
     assert not references[0].can_update
     assert references[0].reason == "Parameter is locked"
+
+
+def test_scan_file_references_marks_output_parms_as_generated_context(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """It keeps missing generated output paths visible without making them relink targets."""
+    parm = FakeParm("/obj/geo1/filecache1/sopoutput", "$HIP/cache/missing.$F4.bgeo.sc")
+    root = FakeRootNode([(parm, "$HIP/cache/missing.$F4.bgeo.sc")])
+    fake_hou = SimpleNamespace(
+        node=lambda path: root if path == "/" else None,
+        expandString=lambda value: value.replace("$HIP", str(tmp_path)).replace("$F4", "1052"),
+        getenv=lambda name: str(tmp_path) if name == "HIP" else None,
+    )
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    references = scan_file_references()
+
+    assert len(references) == 1
+    reference = references[0]
+    assert reference.reference_role == ReferenceRole.GENERATED_OUTPUT.value
+    assert not reference.exists
+    assert not reference.can_update
+    assert reference.reason == (
+        "Generated output path; shown for context, not treated as an inbound asset dependency."
+    )
 
 
 def test_scan_file_references_skips_non_relinkable_file_reference_rows(

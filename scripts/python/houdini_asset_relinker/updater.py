@@ -37,19 +37,25 @@ def replace_path_text(
     Returns:
         An update report.
     """
+    from contextlib import nullcontext
+
+    from houdini_asset_relinker.hou_access import undo_group
+
     current_references = (
         list(references) if references is not None else scan_assets(include_hda_libraries=False)
     )
     results = []
-    for reference in current_references:
-        if reference.kind != ReferenceKind.FILE_PARAMETER:
-            continue
-        if is_generated_output(reference):
-            continue
-        new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
-        if new_path is None:
-            continue
-        results.append(_set_reference_path(reference, new_path, dry_run))
+    context = nullcontext() if dry_run else undo_group("Replace Path Text")
+    with context:
+        for reference in current_references:
+            if reference.kind != ReferenceKind.FILE_PARAMETER:
+                continue
+            if is_generated_output(reference):
+                continue
+            new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
+            if new_path is None:
+                continue
+            results.append(_set_reference_path(reference, new_path, dry_run))
     return UpdateReport(dry_run=dry_run, results=tuple(results))
 
 
@@ -70,19 +76,25 @@ def replace_path_root(
     Returns:
         An update report.
     """
+    from contextlib import nullcontext
+
+    from houdini_asset_relinker.hou_access import undo_group
+
     current_references = (
         list(references) if references is not None else scan_assets(include_hda_libraries=False)
     )
     results = []
-    for reference in current_references:
-        if reference.kind != ReferenceKind.FILE_PARAMETER:
-            continue
-        if is_generated_output(reference):
-            continue
-        new_path = replace_root(reference.raw_path, old_root, new_root)
-        if new_path is None:
-            continue
-        results.append(_set_reference_path(reference, new_path, dry_run))
+    context = nullcontext() if dry_run else undo_group("Replace Path Root")
+    with context:
+        for reference in current_references:
+            if reference.kind != ReferenceKind.FILE_PARAMETER:
+                continue
+            if is_generated_output(reference):
+                continue
+            new_path = replace_root(reference.raw_path, old_root, new_root)
+            if new_path is None:
+                continue
+            results.append(_set_reference_path(reference, new_path, dry_run))
     return UpdateReport(dry_run=dry_run, results=tuple(results))
 
 
@@ -108,49 +120,57 @@ def replace_hda_library_paths(
     Returns:
         An update report.
     """
+    from contextlib import nullcontext
+
+    from houdini_asset_relinker.hou_access import undo_group
+
     hou = None if dry_run else get_hou()
     results = []
     current_references = list(references) if references is not None else scan_hda_libraries()
-    for reference in current_references:
-        if reference.kind != ReferenceKind.HDA_LIBRARY:
-            continue
-        new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
-        if new_path is None:
-            continue
-        if reference.raw_path == "Embedded":
-            results.append(
-                UpdateResult(
-                    status="skipped",
-                    old_path=reference.raw_path,
-                    new_path=new_path,
-                    message="Embedded HDA definitions cannot be relinked to a file path.",
+    context = nullcontext() if dry_run else undo_group("Replace HDA Library Paths")
+    with context:
+        for reference in current_references:
+            if reference.kind != ReferenceKind.HDA_LIBRARY:
+                continue
+            new_path = replace_text(reference.raw_path, find_text, replace_with, case_sensitive)
+            if new_path is None:
+                continue
+            if reference.raw_path == "Embedded":
+                results.append(
+                    UpdateResult(
+                        status="skipped",
+                        old_path=reference.raw_path,
+                        new_path=new_path,
+                        message="Embedded HDA definitions cannot be relinked to a file path.",
+                    )
                 )
-            )
-            continue
-        if dry_run:
-            results.append(
-                UpdateResult(status="would_change", old_path=reference.raw_path, new_path=new_path)
-            )
-            continue
-        try:
-            if hou is None:
-                message = "Houdini module was not available for applying HDA library changes."
-                raise RuntimeError(message)
-            hou.hda.installFile(new_path)
-            if uninstall_old:
-                hou.hda.uninstallFile(reference.raw_path)
-            results.append(
-                UpdateResult(status="changed", old_path=reference.raw_path, new_path=new_path)
-            )
-        except Exception as error:
-            results.append(
-                UpdateResult(
-                    status="failed",
-                    old_path=reference.raw_path,
-                    new_path=new_path,
-                    message=str(error),
+                continue
+            if dry_run:
+                results.append(
+                    UpdateResult(
+                        status="would_change", old_path=reference.raw_path, new_path=new_path
+                    )
                 )
-            )
+                continue
+            try:
+                if hou is None:
+                    message = "Houdini module was not available for applying HDA library changes."
+                    raise RuntimeError(message)
+                hou.hda.installFile(new_path)
+                if uninstall_old:
+                    hou.hda.uninstallFile(reference.raw_path)
+                results.append(
+                    UpdateResult(status="changed", old_path=reference.raw_path, new_path=new_path)
+                )
+            except Exception as error:
+                results.append(
+                    UpdateResult(
+                        status="failed",
+                        old_path=reference.raw_path,
+                        new_path=new_path,
+                        message=str(error),
+                    )
+                )
     return UpdateReport(dry_run=dry_run, results=tuple(results))
 
 

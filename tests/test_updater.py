@@ -101,8 +101,18 @@ def test_replace_path_text_exact_case_opt_in_skips_case_mismatch() -> None:
 
 def test_replace_path_text_apply_sets_houdini_parameter(monkeypatch) -> None:
     """It applies matching updates to the referenced Houdini parameter."""
+    from contextlib import contextmanager
+
+    class FakeUndos:
+        @contextmanager
+        def group(self, label: str):
+            yield
+
     parm = FakeParm()
-    fake_hou = SimpleNamespace(parm=lambda path: parm if path == "/obj/geo1/file1/file" else None)
+    fake_hou = SimpleNamespace(
+        parm=lambda path: parm if path == "/obj/geo1/file1/file" else None,
+        undos=FakeUndos(),
+    )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
     report = replace_path_text(
@@ -158,7 +168,17 @@ def test_replace_path_text_skips_generated_output_context_rows() -> None:
 
 def test_replace_path_text_reports_missing_parameter_on_apply(monkeypatch) -> None:
     """It reports a failed result if the Houdini parameter disappears."""
-    fake_hou = SimpleNamespace(parm=lambda path: None)
+    from contextlib import contextmanager
+
+    class FakeUndos:
+        @contextmanager
+        def group(self, label: str):
+            yield
+
+    fake_hou = SimpleNamespace(
+        parm=lambda path: None,
+        undos=FakeUndos(),
+    )
     monkeypatch.setitem(sys.modules, "hou", fake_hou)
 
     report = replace_path_text(
@@ -195,3 +215,27 @@ def test_replace_hda_library_paths_dry_run_accepts_prescanned_references() -> No
     assert report.changed_count == 1
     assert report.results[0].status == "would_change"
     assert report.results[0].new_path == "P:/new_show/assets/tool.hda"
+
+
+def test_undo_group_active(monkeypatch) -> None:
+    """It enters the hou.undos.group context manager when hou has undos."""
+    from contextlib import contextmanager
+
+    entered_label = None
+
+    class FakeUndos:
+        @contextmanager
+        def group(self, label: str):
+            nonlocal entered_label
+            entered_label = label
+            yield
+
+    fake_hou = SimpleNamespace(undos=FakeUndos())
+    monkeypatch.setitem(sys.modules, "hou", fake_hou)
+
+    from houdini_asset_relinker.hou_access import undo_group
+
+    with undo_group("Test Undo Group"):
+        pass
+
+    assert entered_label == "Test Undo Group"

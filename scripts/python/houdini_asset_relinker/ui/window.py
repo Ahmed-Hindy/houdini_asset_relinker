@@ -45,6 +45,10 @@ from houdini_asset_relinker.ui.qt_constants import (
     SINGLE_SELECTION,
     WAIT_CURSOR,
 )
+from houdini_asset_relinker.ui.reference_display import (
+    reference_note_text,
+    reference_status_text,
+)
 from houdini_asset_relinker.ui.style import (
     ASSET_RELINKER_STYLESHEET,
     REPORT_TABLE_ALT_BASE_COLOR,
@@ -637,7 +641,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         lines = [
             f"Kind: {reference.kind.value}",
             f"Role: {normalized_reference_role(reference)}",
-            f"Status: {_reference_status_text(reference)}",
+            f"Status: {reference_status_text(reference, style='lower')}",
             f"Writable: {'yes' if reference.can_update else 'no'}",
             f"Node: {reference.node_path or ''}",
             f"Parameter: {reference.parm_path or ''}",
@@ -654,7 +658,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                 "",
                 f"Expanded path:\n{reference.expanded_path}",
                 "",
-                f"Note:\n{_reference_note_text(reference)}",
+                f"Note:\n{reference_note_text(reference)}",
             ]
         )
         self.detail_text.setPlainText("\n".join(lines))
@@ -942,28 +946,6 @@ def _exec_dialog(target: object, *args: object) -> int:
     if exec_method is None:
         return 0
     return exec_method(*args)
-
-
-def _reference_status_text(reference: AssetReference) -> str:
-    """Return the selected-reference status text."""
-    if is_generated_output(reference):
-        return "generated output"
-    if reference.missing_variables:
-        return "undefined variable"
-    if not reference.exists:
-        return "missing"
-    if not reference.can_update:
-        return "read only"
-    return "ready"
-
-
-def _reference_note_text(reference: AssetReference) -> str:
-    """Return the selected-reference note text."""
-    if is_generated_output(reference):
-        return reference.reason or "Generated output path kept for context."
-    if reference.missing_variables:
-        return f"Undefined variables: {', '.join(reference.missing_variables)}"
-    return reference.reason or ""
 
 
 def _path_is_under_or_equal(path_value: str, root_value: str) -> bool:

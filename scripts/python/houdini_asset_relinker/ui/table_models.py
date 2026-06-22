@@ -13,7 +13,6 @@ from houdini_asset_relinker.models import (
     UpdateResult,
     UpdateStatus,
     is_broken_relink_target,
-    is_generated_output,
     normalized_reference_role,
 )
 from houdini_asset_relinker.path_utils import matches_find_text
@@ -28,6 +27,17 @@ from houdini_asset_relinker.ui.qt_constants import (
     TOOLTIP_ROLE,
     USER_ROLE,
 )
+from houdini_asset_relinker.ui.reference_display import (
+    REFERENCE_STATUS_GENERATED_OUTPUT,
+    REFERENCE_STATUS_MISSING,
+    REFERENCE_STATUS_READ_ONLY,
+    REFERENCE_STATUS_READY,
+    REFERENCE_STATUS_UNDEFINED_VARIABLE,
+    missing_variables_text,
+    reference_note_text,
+    reference_status,
+    reference_status_text,
+)
 from houdini_asset_relinker.ui.style import (
     FIND_MATCH_ROW_COLOR,
     REPORT_STATUS_TINT_MIX,
@@ -38,6 +48,14 @@ from houdini_asset_relinker.ui.style import (
     STATUS_COLOR_READY,
     STATUS_COLOR_UNDEFINED_VARIABLE,
 )
+
+_STATUS_COLOR_BY_REFERENCE_STATUS = {
+    REFERENCE_STATUS_GENERATED_OUTPUT: STATUS_COLOR_NOT_UPDATABLE,
+    REFERENCE_STATUS_UNDEFINED_VARIABLE: STATUS_COLOR_UNDEFINED_VARIABLE,
+    REFERENCE_STATUS_MISSING: STATUS_COLOR_MISSING,
+    REFERENCE_STATUS_READ_ONLY: STATUS_COLOR_NOT_UPDATABLE,
+    REFERENCE_STATUS_READY: STATUS_COLOR_READY,
+}
 
 
 class ReferenceTableModel(QtCore.QAbstractTableModel):
@@ -137,7 +155,7 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
 
     def _display_value(self, reference: AssetReference, key: str) -> str:
         if key == "status":
-            return _status_text(reference)
+            return reference_status_text(reference)
         if key == "kind":
             return "HDA Library" if reference.kind == ReferenceKind.HDA_LIBRARY else "File Parm"
         if key == "reference_role":
@@ -147,17 +165,17 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
         if key == "can_update":
             return "Yes" if reference.can_update else "No"
         if key == "reason":
-            return _note_text(reference)
+            return reference_note_text(reference)
         value = getattr(reference, key)
         return str(value or "")
 
     def _tooltip(self, reference: AssetReference) -> str:
         location = reference.parm_path or reference.node_path or "<session/reference>"
-        note = _note_text(reference)
+        note = reference_note_text(reference)
         return "\n".join(
             [
                 f"Location: {location}",
-                f"Status: {_status_text(reference)}",
+                f"Status: {reference_status_text(reference)}",
                 f"Role: {_reference_role_text(reference)}",
                 f"Path family: {reference.path_family}",
                 f"Raw: {reference.raw_path}",
@@ -168,15 +186,8 @@ class ReferenceTableModel(QtCore.QAbstractTableModel):
         )
 
     def _status_brush(self, reference: AssetReference) -> QtGui.QBrush:
-        if is_generated_output(reference):
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_NOT_UPDATABLE))
-        if reference.missing_variables:
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_UNDEFINED_VARIABLE))
-        if not reference.exists:
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_MISSING))
-        if not reference.can_update:
-            return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_NOT_UPDATABLE))
-        return QtGui.QBrush(QtGui.QColor(STATUS_COLOR_READY))
+        color = _STATUS_COLOR_BY_REFERENCE_STATUS[reference_status(reference)]
+        return QtGui.QBrush(QtGui.QColor(color))
 
 
 class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
@@ -237,7 +248,7 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
                 reference.raw_path,
                 reference.expanded_path,
                 reference.sequence_pattern,
-                _missing_variables_text(reference),
+                missing_variables_text(reference),
                 reference.reason,
             ]
         ).casefold()
@@ -361,28 +372,6 @@ def _parameter_name(parm_path: Optional[str]) -> str:
     return parm_path.rsplit("/", 1)[-1]
 
 
-def _status_text(reference: AssetReference) -> str:
-    """Return the user-visible reference status."""
-    if is_generated_output(reference):
-        return "Generated output"
-    if reference.missing_variables:
-        return "Undefined variable"
-    if not reference.exists:
-        return "Missing"
-    if not reference.can_update:
-        return "Read only"
-    return "Ready"
-
-
-def _note_text(reference: AssetReference) -> str:
-    """Return the user-visible note for a reference."""
-    if is_generated_output(reference):
-        return reference.reason or "Generated output path kept for context"
-    if reference.missing_variables:
-        return _missing_variables_text(reference)
-    return reference.reason or ("Writable reference" if reference.can_update else "Not writable")
-
-
 def _reference_role_text(reference: AssetReference) -> str:
     """Return a user-visible high-level role for a reference."""
     role = normalized_reference_role(reference)
@@ -391,10 +380,3 @@ def _reference_role_text(reference: AssetReference) -> str:
     if role == ReferenceRole.HDA_LIBRARY.value:
         return "HDA library"
     return "Inbound dependency"
-
-
-def _missing_variables_text(reference: AssetReference) -> str:
-    """Return a readable undefined-variable note."""
-    if not reference.missing_variables:
-        return ""
-    return f"Undefined variables: {', '.join(reference.missing_variables)}"

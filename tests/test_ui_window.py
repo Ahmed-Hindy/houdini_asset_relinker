@@ -15,6 +15,7 @@ from houdini_asset_relinker.models import (
     ReferenceRole,
     UpdateReport,
     UpdateResult,
+    UpdateStatus,
 )
 from houdini_asset_relinker.qt import QtGui
 from houdini_asset_relinker.ui import window as window_module
@@ -214,19 +215,19 @@ def test_report_table_model_uses_row_tints_and_readable_tooltips(qt_app) -> None
             dry_run=True,
             results=(
                 UpdateResult(
-                    status="would_change",
+                    status=UpdateStatus.WOULD_CHANGE,
                     old_path="/old/a",
                     new_path="/new/a",
                     parm_path="/obj/geo1/file",
                 ),
                 UpdateResult(
-                    status="skipped",
+                    status=UpdateStatus.SKIPPED,
                     old_path="/old/b",
                     new_path="/new/b",
                     message="Already matches.",
                 ),
                 UpdateResult(
-                    status="failed",
+                    status=UpdateStatus.FAILED,
                     old_path="/old/c",
                     new_path="/new/c",
                     message="Permission denied.",
@@ -465,7 +466,7 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
             dry_run=False,
             results=(
                 UpdateResult(
-                    status="changed",
+                    status=UpdateStatus.CHANGED,
                     old_path="P:/old_show/cache/a.bgeo.sc",
                     new_path="P:/new_show/cache/a.bgeo.sc",
                     parm_path="/obj/geo1/file1/file",
@@ -656,7 +657,7 @@ def test_apply_uses_current_live_preview_scope(monkeypatch, qt_app, relinker_win
                 dry_run=True,
                 results=tuple(
                     UpdateResult(
-                        status="would_change",
+                        status=UpdateStatus.WOULD_CHANGE,
                         old_path=reference.raw_path,
                         new_path=reference.raw_path.replace("old_show", "new_show"),
                         parm_path=reference.parm_path,
@@ -669,7 +670,7 @@ def test_apply_uses_current_live_preview_scope(monkeypatch, qt_app, relinker_win
             dry_run=False,
             results=tuple(
                 UpdateResult(
-                    status="changed",
+                    status=UpdateStatus.CHANGED,
                     old_path=reference.raw_path,
                     new_path=reference.raw_path.replace("old_show", "new_show"),
                     parm_path=reference.parm_path,
@@ -784,7 +785,7 @@ def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_w
                 dry_run=True,
                 results=(
                     UpdateResult(
-                        status="would_change",
+                        status=UpdateStatus.WOULD_CHANGE,
                         old_path="P:/old_show/cache/a.bgeo.sc",
                         new_path="P:/new_show/cache/a.bgeo.sc",
                         parm_path="/obj/geo1/file/file",
@@ -795,7 +796,7 @@ def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_w
             dry_run=False,
             results=(
                 UpdateResult(
-                    status="changed",
+                    status=UpdateStatus.CHANGED,
                     old_path="P:/old_show/cache/a.bgeo.sc",
                     new_path="P:/new_show/cache/a.bgeo.sc",
                     parm_path="/obj/geo1/file/file",
@@ -819,7 +820,7 @@ def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_w
     assert relinker_window._current_report is not None
     assert not relinker_window._current_report.dry_run
     assert len(relinker_window._current_report.results) == 1
-    assert relinker_window._current_report.results[0].status == "changed"
+    assert relinker_window._current_report.results[0].status == UpdateStatus.CHANGED
 
     # Verify the table view row background colors are green (opaque blended green)
     model = relinker_window._report_model

@@ -11,6 +11,7 @@ from houdini_asset_relinker.models import (
     ReferenceRole,
     UpdateReport,
     UpdateResult,
+    UpdateStatus,
     is_broken_relink_target,
     is_generated_output,
     normalized_reference_role,
@@ -298,24 +299,24 @@ class UpdateResultTableModel(QtCore.QAbstractTableModel):
 
 def _result_status_label(result: UpdateResult) -> str:
     """Return a user-visible label for an update result."""
-    if result.status == "would_change":
+    if result.status == UpdateStatus.WOULD_CHANGE:
         return "Planned change"
-    if result.status == "changed":
+    if result.status == UpdateStatus.CHANGED:
         return "Applied"
-    if result.status == "skipped":
+    if result.status == UpdateStatus.SKIPPED:
         return "Skipped"
-    if result.status == "failed":
+    if result.status == UpdateStatus.FAILED:
         return "Failed"
-    return result.status
+    return result.status.value
 
 
 def _result_status_color(result: UpdateResult) -> Optional[str]:
     """Return the status accent color for an update result."""
-    if result.status == "failed":
+    if result.status == UpdateStatus.FAILED:
         return STATUS_COLOR_MISSING
-    if result.status == "skipped":
+    if result.status == UpdateStatus.SKIPPED:
         return STATUS_COLOR_NOT_UPDATABLE
-    if result.status == "changed":
+    if result.status == UpdateStatus.CHANGED:
         return STATUS_COLOR_READY
     return None
 

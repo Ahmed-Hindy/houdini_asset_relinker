@@ -11,6 +11,7 @@ from houdini_asset_relinker.models import (
     ReferenceKind,
     UpdateReport,
     UpdateResult,
+    UpdateStatus,
     is_generated_output,
 )
 from houdini_asset_relinker.path_utils import replace_root, replace_text
@@ -138,7 +139,7 @@ def replace_hda_library_paths(
             if reference.raw_path == "Embedded":
                 results.append(
                     UpdateResult(
-                        status="skipped",
+                        status=UpdateStatus.SKIPPED,
                         old_path=reference.raw_path,
                         new_path=new_path,
                         message="Embedded HDA definitions cannot be relinked to a file path.",
@@ -148,7 +149,9 @@ def replace_hda_library_paths(
             if dry_run:
                 results.append(
                     UpdateResult(
-                        status="would_change", old_path=reference.raw_path, new_path=new_path
+                        status=UpdateStatus.WOULD_CHANGE,
+                        old_path=reference.raw_path,
+                        new_path=new_path,
                     )
                 )
                 continue
@@ -160,12 +163,16 @@ def replace_hda_library_paths(
                 if uninstall_old:
                     hou.hda.uninstallFile(reference.raw_path)
                 results.append(
-                    UpdateResult(status="changed", old_path=reference.raw_path, new_path=new_path)
+                    UpdateResult(
+                        status=UpdateStatus.CHANGED,
+                        old_path=reference.raw_path,
+                        new_path=new_path,
+                    )
                 )
             except Exception as error:
                 results.append(
                     UpdateResult(
-                        status="failed",
+                        status=UpdateStatus.FAILED,
                         old_path=reference.raw_path,
                         new_path=new_path,
                         message=str(error),
@@ -178,7 +185,7 @@ def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool)
     """Set a single Houdini parameter path or return the dry-run result."""
     if not reference.can_update or not reference.parm_path:
         return UpdateResult(
-            status="skipped",
+            status=UpdateStatus.SKIPPED,
             old_path=reference.raw_path,
             new_path=new_path,
             parm_path=reference.parm_path,
@@ -186,7 +193,7 @@ def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool)
         )
     if dry_run:
         return UpdateResult(
-            status="would_change",
+            status=UpdateStatus.WOULD_CHANGE,
             old_path=reference.raw_path,
             new_path=new_path,
             parm_path=reference.parm_path,
@@ -195,7 +202,7 @@ def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool)
     parm = hou.parm(reference.parm_path)
     if parm is None:
         return UpdateResult(
-            status="failed",
+            status=UpdateStatus.FAILED,
             old_path=reference.raw_path,
             new_path=new_path,
             parm_path=reference.parm_path,
@@ -211,7 +218,7 @@ def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool)
     except Exception as error:
         return _failed_result(reference, new_path, error)
     return UpdateResult(
-        status="changed",
+        status=UpdateStatus.CHANGED,
         old_path=reference.raw_path,
         new_path=new_path,
         parm_path=reference.parm_path,
@@ -221,7 +228,7 @@ def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool)
 def _failed_result(reference: AssetReference, new_path: str, error: Exception) -> UpdateResult:
     """Build a failed update result."""
     return UpdateResult(
-        status="failed",
+        status=UpdateStatus.FAILED,
         old_path=reference.raw_path,
         new_path=new_path,
         parm_path=reference.parm_path,

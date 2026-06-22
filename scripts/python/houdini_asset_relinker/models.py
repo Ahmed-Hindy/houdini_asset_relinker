@@ -29,6 +29,15 @@ class ReferenceRole(str, Enum):
     HDA_LIBRARY = "hda_library"
 
 
+class UpdateStatus(str, Enum):
+    """Known statuses for path update results."""
+
+    WOULD_CHANGE = "would_change"
+    CHANGED = "changed"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True)
 class AssetReference:
     """A single external asset reference found in the current Houdini session.
@@ -105,16 +114,20 @@ class AssetReference:
 class UpdateResult:
     """The result of attempting to update one asset reference."""
 
-    status: str
+    status: UpdateStatus
     old_path: str
     new_path: str
     parm_path: Optional[str] = None
     message: str = ""
 
+    def __post_init__(self) -> None:
+        """Normalize raw status values to the shared enum."""
+        object.__setattr__(self, "status", UpdateStatus(self.status))
+
     @property
     def changed(self) -> bool:
         """Return whether this result represents a real or planned change."""
-        return self.status in {"changed", "would_change"}
+        return self.status in {UpdateStatus.CHANGED, UpdateStatus.WOULD_CHANGE}
 
 
 @dataclass(frozen=True)
@@ -132,12 +145,12 @@ class UpdateReport:
     @property
     def skipped_count(self) -> int:
         """Return the number of skipped results."""
-        return sum(result.status == "skipped" for result in self.results)
+        return sum(result.status == UpdateStatus.SKIPPED for result in self.results)
 
     @property
     def failed_count(self) -> int:
         """Return the number of failed results."""
-        return sum(result.status == "failed" for result in self.results)
+        return sum(result.status == UpdateStatus.FAILED for result in self.results)
 
     def to_text(self, max_rows: int = 80) -> str:
         """Build a readable report for Houdini dialogs or console output.
@@ -158,7 +171,7 @@ class UpdateReport:
         ]
         for index, result in enumerate(self.results[:max_rows], start=1):
             location = result.parm_path or "<session/reference>"
-            lines.append(f"{index:03d}. [{result.status}] {location}")
+            lines.append(f"{index:03d}. [{result.status.value}] {location}")
             lines.append(f"     old: {result.old_path}")
             lines.append(f"     new: {result.new_path}")
             if result.message:

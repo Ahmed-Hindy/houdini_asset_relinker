@@ -5,7 +5,12 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
-from houdini_asset_relinker.models import AssetReference, ReferenceKind, ReferenceRole
+from houdini_asset_relinker.models import (
+    AssetReference,
+    ReferenceKind,
+    ReferenceRole,
+    UpdateStatus,
+)
 from houdini_asset_relinker.updater import (
     replace_hda_library_paths,
     replace_path_root,
@@ -51,7 +56,7 @@ def test_replace_path_text_dry_run_does_not_touch_houdini() -> None:
 
     assert report.dry_run
     assert report.changed_count == 1
-    assert report.results[0].status == "would_change"
+    assert report.results[0].status == UpdateStatus.WOULD_CHANGE
     assert report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
 
 
@@ -123,7 +128,7 @@ def test_replace_path_text_apply_sets_houdini_parameter(monkeypatch) -> None:
     )
 
     assert report.changed_count == 1
-    assert report.results[0].status == "changed"
+    assert report.results[0].status == UpdateStatus.CHANGED
     assert parm.value == "P:/new_show/cache/a.bgeo.sc"
     assert parm.follow_parm_reference is False
 
@@ -213,7 +218,7 @@ def test_replace_hda_library_paths_dry_run_accepts_prescanned_references() -> No
     )
 
     assert report.changed_count == 1
-    assert report.results[0].status == "would_change"
+    assert report.results[0].status == UpdateStatus.WOULD_CHANGE
     assert report.results[0].new_path == "P:/new_show/assets/tool.hda"
 
 

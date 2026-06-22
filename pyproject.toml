@@ -1,3 +1,8 @@
+[project]
+name = "houdini-asset-relinker"
+version = "0.0.0"
+requires-python = ">=3.9"
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.3.0",

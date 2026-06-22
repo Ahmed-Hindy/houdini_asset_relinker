@@ -26,6 +26,13 @@ from houdini_asset_relinker.ui.qt_constants import (
     SCROLL_PER_PIXEL,
     TOOLTIP_ROLE,
 )
+from houdini_asset_relinker.ui.relink_state import (
+    SCOPE_MISSING_UNDER_ROOT,
+    SCOPE_PATH_FAMILY,
+    SCOPE_SELECTED_ROW,
+    SCOPE_VISIBLE_ROWS,
+    ReplaceRequest,
+)
 from houdini_asset_relinker.ui.style import (
     REPORT_STATUS_TINT_MIX,
     REPORT_TABLE_ALT_BASE_COLOR,
@@ -35,15 +42,8 @@ from houdini_asset_relinker.ui.style import (
     STATUS_COLOR_READY,
 )
 from houdini_asset_relinker.ui.table_models import UpdateResultTableModel, _blend_hex_color
-from houdini_asset_relinker.ui.window import (
-    REFERENCE_PATH_FAMILY_COLUMN,
-    SCOPE_MISSING_UNDER_ROOT,
-    SCOPE_PATH_FAMILY,
-    SCOPE_SELECTED_ROW,
-    SCOPE_VISIBLE_ROWS,
-    AssetRelinkerWindow,
-    ReplaceRequest,
-)
+from houdini_asset_relinker.ui.view_builders import REFERENCE_PATH_FAMILY_COLUMN
+from houdini_asset_relinker.ui.window import AssetRelinkerWindow
 
 
 @pytest.fixture(autouse=True)
@@ -387,7 +387,7 @@ def test_replacement_input_change_updates_live_preview(qt_app, relinker_window) 
     _flush_live_relink_preview(qt_app)
 
     assert relinker_window.apply_button.isEnabled()
-    assert relinker_window._preview_request == ReplaceRequest(
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
         find_text="P:/old_show",
         replace_with="P:/new_show",
         case_sensitive=False,
@@ -400,8 +400,8 @@ def test_replacement_input_change_updates_live_preview(qt_app, relinker_window) 
     relinker_window.find_edit.setText("P:/other_show")
     _flush_live_relink_preview(qt_app)
 
-    assert relinker_window._preview_report is not None
-    assert relinker_window._preview_request == ReplaceRequest(
+    assert relinker_window._relink_state.preview_report is not None
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
         find_text="P:/other_show",
         replace_with="P:/new_show",
         case_sensitive=False,
@@ -420,15 +420,19 @@ def test_live_relink_preview_updates_without_preview_button(qt_app, relinker_win
     _flush_live_relink_preview(qt_app)
 
     assert relinker_window._report_model.rowCount() == 1
-    assert relinker_window._current_report is not None
-    assert relinker_window._current_report.results[0].new_path == "P:/new_show/cache/a.bgeo.sc"
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results[0].new_path == (
+        "P:/new_show/cache/a.bgeo.sc"
+    )
 
     relinker_window.replace_edit.setText("P:/renamed_show")
     _flush_live_relink_preview(qt_app)
 
     assert relinker_window._report_model.rowCount() == 1
-    assert relinker_window._current_report is not None
-    assert relinker_window._current_report.results[0].new_path == "P:/renamed_show/cache/a.bgeo.sc"
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results[0].new_path == (
+        "P:/renamed_show/cache/a.bgeo.sc"
+    )
 
 
 def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) -> None:
@@ -441,7 +445,7 @@ def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) 
     relinker_window.find_edit.clear()
     _flush_live_relink_preview(qt_app)
 
-    assert relinker_window._preview_report is None
+    assert relinker_window._relink_state.preview_report is None
     assert relinker_window._report_model.rowCount() == 0
     assert not relinker_window.apply_button.isEnabled()
 
@@ -474,7 +478,7 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
             ),
         )
 
-    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(window_module, "build_replace_report", fake_build_replace_report)
     monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         window_module.QtWidgets.QMessageBox,
@@ -504,7 +508,7 @@ def test_preview_defaults_to_case_insensitive_windows_paths(relinker_window) -> 
 
     relinker_window.preview_replace()
 
-    assert relinker_window._preview_request == ReplaceRequest(
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
         find_text="p:/old_show/cache",
         replace_with="P:/new_show/cache",
         case_sensitive=False,
@@ -513,8 +517,10 @@ def test_preview_defaults_to_case_insensitive_windows_paths(relinker_window) -> 
         scope=SCOPE_VISIBLE_ROWS,
     )
     assert relinker_window.apply_button.isEnabled()
-    assert relinker_window._current_report is not None
-    assert relinker_window._current_report.results[0].new_path == ("P:/new_show/cache/a.bgeo.sc")
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results[0].new_path == (
+        "P:/new_show/cache/a.bgeo.sc"
+    )
 
 
 def test_exact_case_checkbox_skips_case_mismatched_preview(relinker_window) -> None:
@@ -526,7 +532,7 @@ def test_exact_case_checkbox_skips_case_mismatched_preview(relinker_window) -> N
 
     relinker_window.preview_replace()
 
-    assert relinker_window._preview_request == ReplaceRequest(
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
         find_text="p:/old_show/cache",
         replace_with="P:/new_show/cache",
         case_sensitive=True,
@@ -535,8 +541,8 @@ def test_exact_case_checkbox_skips_case_mismatched_preview(relinker_window) -> N
         scope=SCOPE_VISIBLE_ROWS,
     )
     assert not relinker_window.apply_button.isEnabled()
-    assert relinker_window._current_report is not None
-    assert relinker_window._current_report.results == ()
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results == ()
 
 
 def test_visible_scope_previews_only_filtered_rows(relinker_window) -> None:
@@ -553,9 +559,9 @@ def test_visible_scope_previews_only_filtered_rows(relinker_window) -> None:
 
     relinker_window.preview_replace()
 
-    assert [reference.raw_path for reference in relinker_window._preview_references] == [
-        "P:/old_show/cache/missing.bgeo.sc"
-    ]
+    assert [
+        reference.raw_path for reference in relinker_window._relink_state.preview_references
+    ] == ["P:/old_show/cache/missing.bgeo.sc"]
     assert relinker_window._report_model.rowCount() == 1
 
 
@@ -574,9 +580,9 @@ def test_selected_row_scope_previews_only_selected_reference(relinker_window) ->
 
     relinker_window.preview_replace()
 
-    assert [reference.raw_path for reference in relinker_window._preview_references] == [
-        "P:/old_show/textures/diffuse.exr"
-    ]
+    assert [
+        reference.raw_path for reference in relinker_window._relink_state.preview_references
+    ] == ["P:/old_show/textures/diffuse.exr"]
     assert relinker_window._report_model.rowCount() == 1
 
 
@@ -596,7 +602,9 @@ def test_path_family_scope_previews_selected_family(relinker_window) -> None:
 
     relinker_window.preview_replace()
 
-    assert {reference.raw_path for reference in relinker_window._preview_references} == {
+    assert {
+        reference.raw_path for reference in relinker_window._relink_state.preview_references
+    } == {
         "P:/old_show/cache/a.bgeo.sc",
         "P:/old_show/cache/b.bgeo.sc",
     }
@@ -626,9 +634,9 @@ def test_missing_under_find_root_scope_excludes_existing_and_nonmatching_rows(
 
     relinker_window.preview_replace()
 
-    assert [reference.raw_path for reference in relinker_window._preview_references] == [
-        "P:/old_show/cache/missing.bgeo.sc"
-    ]
+    assert [
+        reference.raw_path for reference in relinker_window._relink_state.preview_references
+    ] == ["P:/old_show/cache/missing.bgeo.sc"]
     assert relinker_window._report_model.rowCount() == 1
 
 
@@ -679,7 +687,7 @@ def test_apply_uses_current_live_preview_scope(monkeypatch, qt_app, relinker_win
             ),
         )
 
-    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(window_module, "build_replace_report", fake_build_replace_report)
     monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         window_module.QtWidgets.QMessageBox,
@@ -804,7 +812,7 @@ def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_w
             ),
         )
 
-    monkeypatch.setattr(relinker_window, "_build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(window_module, "build_replace_report", fake_build_replace_report)
     monkeypatch.setattr(
         window_module.QtWidgets.QMessageBox,
         "warning",
@@ -817,10 +825,10 @@ def test_apply_retains_applied_report_and_colors(monkeypatch, qt_app, relinker_w
     _flush_live_relink_preview(qt_app)
 
     # The applied report should still be set and not cleared by the live preview!
-    assert relinker_window._current_report is not None
-    assert not relinker_window._current_report.dry_run
-    assert len(relinker_window._current_report.results) == 1
-    assert relinker_window._current_report.results[0].status == UpdateStatus.CHANGED
+    assert relinker_window._relink_state.current_report is not None
+    assert not relinker_window._relink_state.current_report.dry_run
+    assert len(relinker_window._relink_state.current_report.results) == 1
+    assert relinker_window._relink_state.current_report.results[0].status == UpdateStatus.CHANGED
 
     # Verify the table view row background colors are green (opaque blended green)
     model = relinker_window._report_model

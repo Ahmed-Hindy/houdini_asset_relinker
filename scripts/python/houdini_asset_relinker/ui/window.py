@@ -128,7 +128,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self._warn("Preview path changes before applying them.")
             return
 
-        current_request = self._current_request_for_operation(preview_request.operation)
+        current_request = self._current_path_request()
         if preview_request != current_request:
             self._update_path_preview(
                 current_request,
@@ -535,11 +535,6 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             scope=self.scope_combo.currentData(),
             operation=OPERATION_NORMALIZE_PATHS,
         )
-
-    def _current_request_for_operation(self, operation: str) -> ReplaceRequest:
-        if operation == OPERATION_NORMALIZE_PATHS:
-            return self._current_normalize_request()
-        return self._current_replace_request()
 
     def _resolve_replace_references(self, request: ReplaceRequest) -> list[AssetReference]:
         """Return the scanned references targeted by the selected relink scope."""

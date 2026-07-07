@@ -646,6 +646,50 @@ def test_apply_uses_the_stored_normalize_request(monkeypatch, relinker_window) -
     ]
 
 
+def test_apply_requires_preview_for_current_operation(monkeypatch, qt_app, relinker_window) -> None:
+    """It does not apply a stale replace preview after switching operations."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("D:/new_show")
+    relinker_window._reference_model.set_references([_reference("P:/old_show/cache/a.bgeo.sc")])
+    _flush_live_relink_preview(qt_app)
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+
+    report_calls: list[tuple[ReplaceRequest, bool]] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        window_module,
+        "build_replace_report",
+        lambda request, _references, dry_run: (
+            report_calls.append((request, dry_run)) or UpdateReport(dry_run=dry_run)
+        ),
+    )
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(relinker_window, "_warn", warnings.append)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    assert report_calls == [
+        (
+            ReplaceRequest(
+                find_text="",
+                replace_with="",
+                case_sensitive=False,
+                include_hda_libraries=False,
+                uninstall_old_hda_libraries=False,
+                scope=SCOPE_VISIBLE_ROWS,
+                operation=OPERATION_NORMALIZE_PATHS,
+            ),
+            True,
+        )
+    ]
+    assert warnings == ["Preview settings changed. Review the latest preview before applying."]
+
+
 def test_preview_defaults_to_case_insensitive_windows_paths(relinker_window) -> None:
     """It previews relinks when Windows-style path casing differs."""
     relinker_window._reference_model.set_references([_reference("P:/OLD_SHOW/Cache/a.bgeo.sc")])

@@ -72,6 +72,7 @@ class RelinkPanelWidgets:
     case_sensitive_check: QtWidgets.QCheckBox
     include_hda_replace_check: QtWidgets.QCheckBox
     uninstall_old_hda_check: QtWidgets.QCheckBox
+    normalize_button: QtWidgets.QPushButton
     apply_button: QtWidgets.QPushButton
     copy_report_button: QtWidgets.QPushButton
     report_table: QtWidgets.QTableView
@@ -348,14 +349,20 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
     layout.addWidget(include_hda_replace_check)
     layout.addWidget(uninstall_old_hda_check)
 
+    normalize_button = QtWidgets.QPushButton("Normalize Paths", parent)
+    normalize_button.setObjectName("secondaryButton")
+    normalize_button.setToolTip(
+        "Preview separator and drive-letter cleanup for file parameters in the selected scope."
+    )
     apply_button = QtWidgets.QPushButton("Apply", parent)
     apply_button.setObjectName("applyButton")
     apply_button.setEnabled(False)
-    apply_button.setToolTip("Apply the latest previewed relink changes.")
+    apply_button.setToolTip("Apply the latest previewed path changes.")
     copy_report_button = QtWidgets.QPushButton("Copy Report", parent)
     copy_report_button.setEnabled(False)
     copy_report_button.setToolTip("Copy the latest preview or apply report.")
     button_row = QtWidgets.QHBoxLayout()
+    button_row.addWidget(normalize_button)
     button_row.addWidget(apply_button)
     button_row.addWidget(copy_report_button)
     layout.addLayout(button_row)
@@ -403,6 +410,7 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
         case_sensitive_check=case_sensitive_check,
         include_hda_replace_check=include_hda_replace_check,
         uninstall_old_hda_check=uninstall_old_hda_check,
+        normalize_button=normalize_button,
         apply_button=apply_button,
         copy_report_button=copy_report_button,
         report_table=report_table,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+from houdini_asset_relinker import updater as updater_module
 from houdini_asset_relinker.models import (
     AssetReference,
     ReferenceKind,
@@ -12,6 +13,7 @@ from houdini_asset_relinker.models import (
     UpdateStatus,
 )
 from houdini_asset_relinker.updater import (
+    normalize_path_formats,
     replace_hda_library_paths,
     replace_path_root,
     replace_path_text,
@@ -195,6 +197,102 @@ def test_replace_path_text_reports_missing_parameter_on_apply(monkeypatch) -> No
 
     assert report.failed_count == 1
     assert report.results[0].message == "Parameter no longer exists."
+
+
+def test_normalize_path_formats_previews_file_parameter_cleanup() -> None:
+    """It previews path-format cleanup without requiring a live hou module."""
+    report = normalize_path_formats(
+        dry_run=True,
+        references=[
+            _reference("p:\\old_show\\\\cache\\a.$F4.bgeo.sc"),
+            AssetReference(
+                kind=ReferenceKind.HDA_LIBRARY,
+                raw_path="p:\\old_show\\asset.hda",
+                expanded_path="p:\\old_show\\asset.hda",
+                exists=True,
+                sequence_pattern="",
+                can_update=True,
+            ),
+        ],
+    )
+
+    assert report.dry_run
+    assert report.changed_count == 1
+    assert report.results[0].status == UpdateStatus.WOULD_CHANGE
+    assert report.results[0].new_path == "P:/old_show/cache/a.$F4.bgeo.sc"
+
+
+def test_normalize_path_formats_uses_existing_case_for_direct_paths(monkeypatch) -> None:
+    """It can adopt filesystem casing when raw and expanded paths describe the same path."""
+    monkeypatch.setattr(
+        updater_module,
+        "normalize_existing_path_case",
+        lambda path: "P:/Old_Show/Cache/Asset.bgeo.sc",
+    )
+
+    report = normalize_path_formats(
+        dry_run=True,
+        references=[
+            _reference(
+                "p:\\old_show\\cache\\asset.bgeo.sc",
+                parm_path="/obj/geo1/file1/file",
+            ),
+        ],
+    )
+
+    assert report.changed_count == 1
+    assert report.results[0].new_path == "P:/Old_Show/Cache/Asset.bgeo.sc"
+
+
+def test_normalize_path_formats_preserves_variable_raw_paths_when_casing_exists(
+    monkeypatch,
+) -> None:
+    """It does not replace Houdini-variable raw paths with expanded filesystem paths."""
+    monkeypatch.setattr(
+        updater_module,
+        "normalize_existing_path_case",
+        lambda path: "P:/Old_Show/Cache/Asset.bgeo.sc",
+    )
+    reference = AssetReference(
+        kind=ReferenceKind.FILE_PARAMETER,
+        raw_path="$HIP\\cache\\asset.bgeo.sc",
+        expanded_path="p:/old_show/cache/asset.bgeo.sc",
+        exists=True,
+        sequence_pattern="",
+        parm_path="/obj/geo1/file1/file",
+        node_path="/obj/geo1",
+        can_update=True,
+    )
+
+    report = normalize_path_formats(dry_run=True, references=[reference])
+
+    assert report.changed_count == 1
+    assert report.results[0].new_path == "$HIP/cache/asset.bgeo.sc"
+
+
+def test_normalize_path_formats_reports_unwritable_generated_output_context_rows() -> None:
+    """It can surface formatting drift on output paths without silently applying them."""
+    report = normalize_path_formats(
+        dry_run=True,
+        references=[
+            AssetReference(
+                kind=ReferenceKind.FILE_PARAMETER,
+                reference_role=ReferenceRole.GENERATED_OUTPUT.value,
+                raw_path="p:\\old_show\\\\cache\\out.$F4.bgeo.sc",
+                expanded_path="p:\\old_show\\\\cache\\out.1052.bgeo.sc",
+                exists=False,
+                sequence_pattern="p:\\old_show\\\\cache\\out.*.bgeo.sc",
+                parm_path="/obj/geo1/filecache1/sopoutput",
+                node_path="/obj/geo1/filecache1",
+                can_update=False,
+                reason="Generated output path kept for context.",
+            ),
+        ],
+    )
+
+    assert report.skipped_count == 1
+    assert report.results[0].new_path == "P:/old_show/cache/out.$F4.bgeo.sc"
+    assert report.results[0].message == "Generated output path kept for context."
 
 
 def test_replace_hda_library_paths_dry_run_accepts_prescanned_references() -> None:

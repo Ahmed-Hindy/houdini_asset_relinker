@@ -57,6 +57,47 @@ def normalize_for_compare(path_value: str) -> str:
     return os.path.normcase(normalized.rstrip("/")).replace("\\", "/")
 
 
+def normalize_path_format(path_value: str) -> str:
+    """Return a display-safe path spelling with consistent separators.
+
+    This keeps Houdini variables, frame tokens, URI schemes, UNC roots, and
+    directory/file casing intact. Only path separators, duplicate slash runs,
+    and Windows drive-letter casing are normalized.
+    """
+    normalized = path_value.replace("\\", "/")
+    normalized = _collapse_path_separators(normalized)
+    drive_match = _WINDOWS_DRIVE_PATTERN.match(normalized)
+    if not drive_match:
+        return normalized
+    drive = drive_match.group(1).upper()
+    tail = drive_match.group(2)
+    return drive if tail is None else f"{drive}/{tail}"
+
+
+def normalize_existing_path_case(path_value: str) -> Optional[str]:
+    """Return ``path_value`` with filesystem casing when Windows can provide it."""
+    normalized = normalize_path_format(path_value)
+    path = Path(normalized)
+    if os.name != "nt" or not path.is_absolute() or not path.exists():
+        return None
+
+    try:
+        import ctypes
+    except ImportError:
+        return None
+
+    windows_path = normalized.replace("/", "\\")
+    kernel32 = ctypes.windll.kernel32
+    size = kernel32.GetLongPathNameW(windows_path, None, 0)
+    if size <= 0:
+        return None
+    buffer = ctypes.create_unicode_buffer(size)
+    result = kernel32.GetLongPathNameW(windows_path, buffer, size)
+    if result <= 0 or result > size:
+        return None
+    return normalize_path_format(buffer.value)
+
+
 def path_exists(expanded_path: str, sequence_path_pattern: str = "") -> bool:
     """Return whether an expanded path exists.
 
@@ -262,6 +303,21 @@ def _family_parts(parts: list[str], depth: int) -> list[str]:
 def _path_parts(path_value: str) -> list[str]:
     """Split a normalized path into non-empty components."""
     return [part for part in path_value.split("/") if part]
+
+
+def _collapse_path_separators(path_value: str) -> str:
+    """Collapse duplicate separators without breaking UNC roots or URI schemes."""
+    if re.match(r"^[A-Za-z]:/", path_value):
+        return re.sub(r"/+", "/", path_value)
+
+    uri_match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*://)(.*)$", path_value)
+    if uri_match:
+        return uri_match.group(1) + re.sub(r"/+", "/", uri_match.group(2))
+
+    if path_value.startswith("//"):
+        return "//" + re.sub(r"/+", "/", path_value[2:])
+
+    return re.sub(r"/+", "/", path_value)
 
 
 def _looks_like_file_name(path_part: str) -> bool:

@@ -27,6 +27,7 @@ from houdini_asset_relinker.ui.qt_constants import (
     TOOLTIP_ROLE,
 )
 from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
     SCOPE_SELECTED_ROW,
@@ -450,6 +451,34 @@ def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) 
     assert not relinker_window.apply_button.isEnabled()
 
 
+def test_normalize_paths_button_previews_current_scope(relinker_window) -> None:
+    """It previews path-format cleanup through the shared report table."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("p:\\old_show\\\\cache\\a.bgeo.sc"),
+            _reference("P:/old_show/cache/b.bgeo.sc"),
+        ]
+    )
+
+    relinker_window.normalize_button.click()
+
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
+        find_text="",
+        replace_with="",
+        case_sensitive=False,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
+        operation=OPERATION_NORMALIZE_PATHS,
+    )
+    assert relinker_window.apply_button.isEnabled()
+    assert relinker_window._report_model.rowCount() == 1
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results[0].new_path == (
+        "P:/old_show/cache/a.bgeo.sc"
+    )
+
+
 def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_window) -> None:
     """It applies the request that produced the preview."""
     relinker_window.find_edit.setText("P:/old_show")
@@ -496,6 +525,56 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
             include_hda_libraries=False,
             uninstall_old_hda_libraries=False,
             scope=SCOPE_VISIBLE_ROWS,
+        )
+    ]
+
+
+def test_apply_uses_the_stored_normalize_request(monkeypatch, relinker_window) -> None:
+    """It applies the normalization request that produced the preview."""
+    relinker_window._reference_model.set_references([_reference("p:\\old_show\\cache\\a.bgeo.sc")])
+    relinker_window.preview_normalize_paths()
+
+    captured_requests: list[ReplaceRequest] = []
+
+    def fake_build_replace_report(
+        request: ReplaceRequest,
+        references: list[AssetReference],
+        dry_run: bool,
+    ) -> UpdateReport:
+        del references
+        assert not dry_run
+        captured_requests.append(request)
+        return UpdateReport(
+            dry_run=False,
+            results=(
+                UpdateResult(
+                    status=UpdateStatus.CHANGED,
+                    old_path="p:\\old_show\\cache\\a.bgeo.sc",
+                    new_path="P:/old_show/cache/a.bgeo.sc",
+                    parm_path="/obj/geo1/file/file",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(window_module, "build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    assert captured_requests == [
+        ReplaceRequest(
+            find_text="",
+            replace_with="",
+            case_sensitive=False,
+            include_hda_libraries=False,
+            uninstall_old_hda_libraries=False,
+            scope=SCOPE_VISIBLE_ROWS,
+            operation=OPERATION_NORMALIZE_PATHS,
         )
     ]
 

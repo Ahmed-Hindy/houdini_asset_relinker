@@ -7,6 +7,7 @@ from houdini_asset_relinker.path_utils import (
     contains_sequence_token,
     matches_find_text,
     missing_variables,
+    normalize_path_format,
     path_exists,
     path_family,
     replace_root,
@@ -51,6 +52,27 @@ def test_matches_find_text_uses_replace_text_boundaries() -> None:
     assert not matches_find_text("$CACHE_G/sim.$F4.bgeo.sc", "$CACHE")
     assert not matches_find_text("", "$CACHE")
     assert not matches_find_text("$CACHE/sim.$F4.bgeo.sc", "")
+
+
+def test_normalize_path_format_standardizes_windows_separators_and_drive_case() -> None:
+    """It cleans common Windows spelling drift without changing path segment casing."""
+    assert (
+        normalize_path_format("p:\\Assets 3D\\\\Megascans\\Tree\\leaf.$F4.exr")
+        == "P:/Assets 3D/Megascans/Tree/leaf.$F4.exr"
+    )
+    assert normalize_path_format("p://show///cache/file.bgeo.sc") == ("P:/show/cache/file.bgeo.sc")
+
+
+def test_normalize_path_format_preserves_houdini_tokens_unc_and_uri_roots() -> None:
+    """It keeps roots and tokens intact while collapsing duplicate separator runs."""
+    assert normalize_path_format("$HIP\\\\cache////sim.<UDIM>.exr") == "$HIP/cache/sim.<UDIM>.exr"
+    assert (
+        normalize_path_format("\\\\server\\share\\\\show\\asset.usd")
+        == "//server/share/show/asset.usd"
+    )
+    assert normalize_path_format("file://server//share\\asset.usd") == (
+        "file://server/share/asset.usd"
+    )
 
 
 def test_replace_root() -> None:

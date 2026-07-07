@@ -204,21 +204,31 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
     def set_search_text(self, text: str) -> None:
         """Set the free-text reference filter."""
         self._search_text = text.casefold().strip()
-        self.invalidateFilter()
+        self._invalidate_filter()
 
     def set_show_missing_only(self, enabled: bool) -> None:
         """Set whether only broken relink target rows are shown."""
         self._show_missing_only = enabled
-        self.invalidateFilter()
+        self._invalidate_filter()
 
     def set_show_writable_only(self, enabled: bool) -> None:
         """Set whether only writable references are shown."""
         self._show_writable_only = enabled
-        self.invalidateFilter()
+        self._invalidate_filter()
 
     def set_kind_filter(self, kind_filter: str) -> None:
         """Set the reference-kind filter."""
         self._kind_filter = kind_filter
+        self._invalidate_filter()
+
+    def _invalidate_filter(self) -> None:
+        """Invalidate proxy rows across PySide versions without deprecation noise."""
+        begin_filter_change = getattr(self, "beginFilterChange", None)
+        end_filter_change = getattr(self, "endFilterChange", None)
+        if callable(begin_filter_change) and callable(end_filter_change):
+            begin_filter_change()
+            end_filter_change()
+            return
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:

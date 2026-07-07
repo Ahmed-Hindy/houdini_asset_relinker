@@ -9,7 +9,13 @@ from houdini_asset_relinker.models import (
     UpdateResult,
     UpdateStatus,
 )
-from houdini_asset_relinker.ui.relink_state import RelinkState, ReplaceRequest, merge_reports
+from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
+    RelinkState,
+    ReplaceRequest,
+    build_replace_report,
+    merge_reports,
+)
 
 
 def _request(find_text: str = "P:/old_show") -> ReplaceRequest:
@@ -121,3 +127,31 @@ def test_merge_reports_preserves_result_order() -> None:
         "/obj/geo1/file1/file",
         "/obj/geo1/file2/file",
     ]
+
+
+def test_build_replace_report_dispatches_normalize_operation() -> None:
+    """It builds normalization reports from the shared preview request type."""
+    request = ReplaceRequest(
+        find_text="",
+        replace_with="",
+        case_sensitive=False,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope="visible_rows",
+        operation=OPERATION_NORMALIZE_PATHS,
+    )
+    reference = AssetReference(
+        kind=ReferenceKind.FILE_PARAMETER,
+        raw_path="p:\\old_show\\\\cache\\a.bgeo.sc",
+        expanded_path="p:\\old_show\\\\cache\\a.bgeo.sc",
+        exists=False,
+        sequence_pattern="",
+        parm_path="/obj/geo1/file1/file",
+        node_path="/obj/geo1",
+        can_update=True,
+    )
+
+    report = build_replace_report(request, [reference], dry_run=True)
+
+    assert report.changed_count == 1
+    assert report.results[0].new_path == "P:/old_show/cache/a.bgeo.sc"

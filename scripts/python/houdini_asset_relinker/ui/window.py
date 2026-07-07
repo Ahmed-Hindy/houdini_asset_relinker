@@ -40,6 +40,8 @@ from houdini_asset_relinker.ui.reference_display import (
     reference_status_text,
 )
 from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
+    OPERATION_REPLACE_TEXT,
     SCOPE_ALL_ROWS,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
@@ -119,25 +121,35 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         """Run a dry-run replacement preview from the current settings."""
         self._update_live_relink_preview(show_warnings=True)
 
+    def preview_normalize_paths(self) -> None:
+        """Run a dry-run path-format normalization preview for the current scope."""
+        self._update_path_preview(
+            self._current_normalize_request(),
+            show_warnings=True,
+            require_find_text=False,
+        )
+
     def apply_replace(self) -> None:
-        """Apply the last previewed replacement after confirmation."""
+        """Apply the last previewed path update after confirmation."""
         preview_request = self._relink_state.preview_request
         if preview_request is None or not self._relink_state.has_preview_results():
-            self._warn("Preview replacements before applying changes.")
+            self._warn("Preview path changes before applying them.")
             return
-        if preview_request != self._current_replace_request():
-            self._update_live_relink_preview()
-            self._warn("Replacement settings changed. Review the live preview before applying.")
+
+        current_request = self._current_request_for_operation(preview_request.operation)
+        if preview_request != current_request:
+            self._update_path_preview(
+                current_request,
+                show_warnings=False,
+                require_find_text=current_request.operation == OPERATION_REPLACE_TEXT,
+            )
+            self._warn("Preview settings changed. Review the latest preview before applying.")
             return
 
         answer = QtWidgets.QMessageBox.warning(
             self,
-            "Apply Asset Relinks",
-            (
-                "This will update Houdini parameters"
-                " and selected HDA libraries.\n\n"
-                "Save a copy of the hip file before applying large relinks."
-            ),
+            "Apply Asset Path Changes",
+            _operation_apply_message(preview_request.operation),
             MESSAGE_OK | MESSAGE_CANCEL,
             MESSAGE_CANCEL,
         )
@@ -148,7 +160,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         try:
             from houdini_asset_relinker.hou_access import undo_group
 
-            with undo_group("Relink Assets"):
+            with undo_group(_operation_label(preview_request.operation)):
                 report = build_replace_report(
                     preview_request,
                     self._relink_state.preview_references,
@@ -285,6 +297,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.case_sensitive_check = widgets.relink_panel.case_sensitive_check
         self.include_hda_replace_check = widgets.relink_panel.include_hda_replace_check
         self.uninstall_old_hda_check = widgets.relink_panel.uninstall_old_hda_check
+        self.normalize_button = widgets.relink_panel.normalize_button
         self.apply_button = widgets.relink_panel.apply_button
         self.copy_report_button = widgets.relink_panel.copy_report_button
         self.report_table = widgets.relink_panel.report_table
@@ -298,6 +311,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
         self.reset_filters_button.clicked.connect(self._reset_reference_filters)
+        self.normalize_button.clicked.connect(self.preview_normalize_paths)
         self.apply_button.clicked.connect(self.apply_replace)
         self.copy_report_button.clicked.connect(self.copy_report)
         self.search_edit.textChanged.connect(self._proxy_model.set_search_text)
@@ -462,7 +476,24 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             include_hda_libraries=self.include_hda_replace_check.isChecked(),
             uninstall_old_hda_libraries=self.uninstall_old_hda_check.isChecked(),
             scope=self.scope_combo.currentData(),
+            operation=OPERATION_REPLACE_TEXT,
         )
+
+    def _current_normalize_request(self) -> ReplaceRequest:
+        return ReplaceRequest(
+            find_text="",
+            replace_with="",
+            case_sensitive=False,
+            include_hda_libraries=False,
+            uninstall_old_hda_libraries=False,
+            scope=self.scope_combo.currentData(),
+            operation=OPERATION_NORMALIZE_PATHS,
+        )
+
+    def _current_request_for_operation(self, operation: str) -> ReplaceRequest:
+        if operation == OPERATION_NORMALIZE_PATHS:
+            return self._current_normalize_request()
+        return self._current_replace_request()
 
     def _resolve_replace_references(self, request: ReplaceRequest) -> list[AssetReference]:
         """Return the scanned references targeted by the selected relink scope."""
@@ -509,11 +540,23 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _update_live_relink_preview(self, show_warnings: bool = False, *_args: object) -> None:
         """Rebuild the relink report table from the current replacement settings."""
+        self._update_path_preview(
+            self._current_replace_request(),
+            show_warnings=show_warnings,
+            require_find_text=True,
+        )
+
+    def _update_path_preview(
+        self,
+        request: ReplaceRequest,
+        show_warnings: bool = False,
+        require_find_text: bool = True,
+    ) -> None:
+        """Rebuild the report table from a path-update request."""
         if self._live_relink_preview_depth:
             return
         self._live_relink_preview_depth += 1
         try:
-            request = self._current_replace_request()
             if (
                 self._relink_state.current_report is not None
                 and not self._relink_state.current_report.dry_run
@@ -522,13 +565,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                     return
                 self._relink_state.clear_applied_request()
 
-            if not request.find_text.strip():
+            if require_find_text and not request.find_text.strip():
                 self._clear_report()
                 return
             if not self._reference_model.references():
                 self._clear_report()
                 if show_warnings:
-                    self._warn("Scan the scene before previewing replacements.")
+                    self._warn("Scan the scene before previewing path changes.")
                 return
 
             references = self._resolve_replace_references(request)
@@ -555,8 +598,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self._report_model.set_report(report)
             self.apply_button.setEnabled(bool(report.results))
             self.copy_report_button.setEnabled(bool(report.results))
+            operation_label = _operation_label(request.operation)
             self._set_status(
-                f"Preview: {report.changed_count} planned changes, "
+                f"{operation_label} preview: {report.changed_count} planned changes, "
                 f"{report.skipped_count} skipped, {report.failed_count} failed."
             )
         finally:
@@ -653,6 +697,26 @@ def _scope_label(scope: str) -> str:
         SCOPE_ALL_ROWS: "All scanned rows",
     }
     return labels.get(scope, scope)
+
+
+def _operation_label(operation: str) -> str:
+    """Return a user-facing label for a path update operation."""
+    if operation == OPERATION_NORMALIZE_PATHS:
+        return "Normalize paths"
+    return "Relink assets"
+
+
+def _operation_apply_message(operation: str) -> str:
+    """Return confirmation text for a path update operation."""
+    if operation == OPERATION_NORMALIZE_PATHS:
+        return (
+            "This will update Houdini file parameters with normalized path spelling.\n\n"
+            "Save a copy of the hip file before applying broad path changes."
+        )
+    return (
+        "This will update Houdini parameters and selected HDA libraries.\n\n"
+        "Save a copy of the hip file before applying large relinks."
+    )
 
 
 if __name__ == "__main__":

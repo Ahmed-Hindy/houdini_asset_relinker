@@ -20,6 +20,42 @@ from houdini_asset_relinker.path_utils import (
 )
 
 
+def _fake_windows_path_class(exists: bool):
+    """Return a fake Path class that can exercise Windows branches on any OS."""
+
+    class FakeWindowsPath:
+        def __init__(self, path_value: str) -> None:
+            self.path_value = path_value
+
+        def is_absolute(self) -> bool:
+            return len(self.path_value) >= 3 and self.path_value[1:3] == ":/"
+
+        def exists(self) -> bool:
+            return exists
+
+    return FakeWindowsPath
+
+
+def _fake_posix_path_class(tree):
+    """Return a fake Path class backed by a local directory tree mapping."""
+
+    class FakePath:
+        def __init__(self, path_value: str) -> None:
+            self.path_value = path_value.rstrip("/") or "/"
+
+        @property
+        def name(self) -> str:
+            return self.path_value.rsplit("/", 1)[-1]
+
+        def iterdir(self):
+            return [
+                FakePath(f"{self.path_value.rstrip('/')}/{child_name}")
+                for child_name in tree[self.path_value]
+            ]
+
+    return FakePath
+
+
 def test_replace_text_defaults_to_case_insensitive() -> None:
     """It replaces Windows-style path text when only casing differs."""
     result = replace_text("P:/show/cache/a.bgeo.sc", "P:/show", "D:/show")
@@ -74,6 +110,7 @@ def test_normalize_path_format_preserves_houdini_tokens_unc_and_uri_roots() -> N
         normalize_path_format("\\\\server\\share\\\\show\\asset.usd")
         == "//server/share/show/asset.usd"
     )
+    assert normalize_path_format("///server//share\\asset.usd") == "//server/share/asset.usd"
     assert normalize_path_format("file://server//share\\asset.usd") == (
         "file://server/share/asset.usd"
     )
@@ -105,7 +142,7 @@ def test_normalize_existing_path_case_uses_short_long_windows_round_trip(monkeyp
         create_unicode_buffer=lambda _size: SimpleNamespace(value=""),
     )
     monkeypatch.setattr(path_utils.os, "name", "nt")
-    monkeypatch.setattr(Path, "exists", lambda _path: True)
+    monkeypatch.setattr(path_utils, "Path", _fake_windows_path_class(exists=True))
     monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
 
     assert normalize_existing_path_case("c:/mixed case/asset.txt") == "C:/Mixed Case/Asset.txt"
@@ -125,66 +162,37 @@ def test_normalize_existing_path_case_short_circuits_for_missing_windows_path(mo
     )
     monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
     monkeypatch.setattr(path_utils.os, "name", "nt")
-    monkeypatch.setattr(Path, "exists", lambda _path: False)
+    monkeypatch.setattr(path_utils, "Path", _fake_windows_path_class(exists=False))
     assert normalize_existing_path_case("C:/Mixed Case/Asset.txt") is None
 
 
 def test_normalize_existing_path_case_walks_posix_components(monkeypatch) -> None:
     """It recovers filesystem spelling for absolute POSIX paths."""
-
-    class FakePath:
-        tree = {
-            "/": ("Show",),
-            "/Show": ("Assets",),
-            "/Show/Assets": ("Tree.usd",),
-            "/Show/Assets/Tree.usd": (),
-        }
-
-        def __init__(self, path_value: str) -> None:
-            self.path_value = path_value.rstrip("/") or "/"
-
-        @property
-        def name(self) -> str:
-            return self.path_value.rsplit("/", 1)[-1]
-
-        def iterdir(self):
-            return [
-                FakePath(f"{self.path_value.rstrip('/')}/{child_name}")
-                for child_name in self.tree[self.path_value]
-            ]
+    tree = {
+        "/": ("Show",),
+        "/Show": ("Assets",),
+        "/Show/Assets": ("Tree.usd",),
+        "/Show/Assets/Tree.usd": (),
+    }
 
     monkeypatch.setattr(path_utils.os, "name", "posix")
-    monkeypatch.setattr(path_utils, "Path", FakePath)
+    monkeypatch.setattr(path_utils, "Path", _fake_posix_path_class(tree))
 
     assert normalize_existing_path_case("/show/assets/tree.usd") == "/Show/Assets/Tree.usd"
+    assert normalize_existing_path_case("//show/assets/tree.usd") == "//Show/Assets/Tree.usd"
 
 
 def test_normalize_existing_path_case_declines_ambiguous_or_missing_posix_matches(
     monkeypatch,
 ) -> None:
     """It avoids guessing when POSIX path spelling cannot be resolved uniquely."""
-
-    class FakePath:
-        tree = {
-            "/": ("Show", "show", "Assets"),
-            "/Assets": (),
-        }
-
-        def __init__(self, path_value: str) -> None:
-            self.path_value = path_value.rstrip("/") or "/"
-
-        @property
-        def name(self) -> str:
-            return self.path_value.rsplit("/", 1)[-1]
-
-        def iterdir(self):
-            return [
-                FakePath(f"{self.path_value.rstrip('/')}/{child_name}")
-                for child_name in self.tree[self.path_value]
-            ]
+    tree = {
+        "/": ("Show", "show", "Assets"),
+        "/Assets": (),
+    }
 
     monkeypatch.setattr(path_utils.os, "name", "posix")
-    monkeypatch.setattr(path_utils, "Path", FakePath)
+    monkeypatch.setattr(path_utils, "Path", _fake_posix_path_class(tree))
 
     assert normalize_existing_path_case("/SHOW") is None
     assert normalize_existing_path_case("/missing") is None

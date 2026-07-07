@@ -113,6 +113,7 @@ def _windows_existing_path_case(path_value: str) -> Optional[str]:
 
 def _posix_existing_path_case(path_value: str) -> Optional[str]:
     """Return a POSIX path with filesystem casing by walking path components."""
+    root_prefix = "//" if path_value.startswith("//") else "/"
     parts = _path_parts(path_value)
     current_path = Path("/")
     resolved_parts = []
@@ -124,7 +125,7 @@ def _posix_existing_path_case(path_value: str) -> Optional[str]:
             return None
         resolved_parts.append(match.name)
         current_path = match
-    return "/" + "/".join(resolved_parts)
+    return root_prefix + "/".join(resolved_parts)
 
 
 def _case_matching_child(parent_path: Path, path_part: str) -> Optional[Path]:
@@ -381,7 +382,7 @@ def _collapse_path_separators(path_value: str) -> str:
         return uri_match.group(1) + re.sub(r"/+", "/", uri_match.group(2))
 
     if path_value.startswith("//"):
-        return "//" + re.sub(r"/+", "/", path_value[2:])
+        return "//" + re.sub(r"/+", "/", path_value[2:].lstrip("/"))
 
     return re.sub(r"/+", "/", path_value)
 

@@ -1,12 +1,16 @@
 """Tests for path utility helpers."""
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+from houdini_asset_relinker import path_utils
 from houdini_asset_relinker.path_utils import (
     build_sequence_pattern,
     contains_sequence_token,
     matches_find_text,
     missing_variables,
+    normalize_existing_path_case,
     normalize_path_format,
     path_exists,
     path_family,
@@ -73,6 +77,61 @@ def test_normalize_path_format_preserves_houdini_tokens_unc_and_uri_roots() -> N
     assert normalize_path_format("file://server//share\\asset.usd") == (
         "file://server/share/asset.usd"
     )
+
+
+def test_normalize_existing_path_case_uses_short_long_windows_round_trip(monkeypatch) -> None:
+    """It resolves existing Windows paths through short and long Win32 path names."""
+    calls = []
+
+    class FakeKernel32:
+        def GetShortPathNameW(self, path_value, buffer, size):  # noqa: N802
+            calls.append(("short", path_value, buffer is None, size))
+            short_path = "C:\\MIXED~1\\ASSET~1.TXT"
+            if buffer is None:
+                return len(short_path) + 1
+            buffer.value = short_path
+            return len(short_path)
+
+        def GetLongPathNameW(self, path_value, buffer, size):  # noqa: N802
+            calls.append(("long", path_value, buffer is None, size))
+            long_path = "C:\\Mixed Case\\Asset.txt"
+            if buffer is None:
+                return len(long_path) + 1
+            buffer.value = long_path
+            return len(long_path)
+
+    fake_ctypes = SimpleNamespace(
+        windll=SimpleNamespace(kernel32=FakeKernel32()),
+        create_unicode_buffer=lambda _size: SimpleNamespace(value=""),
+    )
+    monkeypatch.setattr(path_utils.os, "name", "nt")
+    monkeypatch.setattr(Path, "exists", lambda _path: True)
+    monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+
+    assert normalize_existing_path_case("c:/mixed case/asset.txt") == "C:/Mixed Case/Asset.txt"
+    assert calls == [
+        ("short", "C:\\mixed case\\asset.txt", True, 0),
+        ("short", "C:\\mixed case\\asset.txt", False, len("C:\\MIXED~1\\ASSET~1.TXT") + 1),
+        ("long", "C:\\MIXED~1\\ASSET~1.TXT", True, 0),
+        ("long", "C:\\MIXED~1\\ASSET~1.TXT", False, len("C:\\Mixed Case\\Asset.txt") + 1),
+    ]
+
+
+def test_normalize_existing_path_case_short_circuits_without_windows_or_existing_path(
+    monkeypatch,
+) -> None:
+    """It avoids Win32 calls outside Windows or when the path does not exist."""
+    fake_ctypes = SimpleNamespace(
+        windll=SimpleNamespace(kernel32=SimpleNamespace()),
+        create_unicode_buffer=lambda _size: SimpleNamespace(value=""),
+    )
+    monkeypatch.setitem(sys.modules, "ctypes", fake_ctypes)
+    monkeypatch.setattr(path_utils.os, "name", "posix")
+    assert normalize_existing_path_case("C:/Mixed Case/Asset.txt") is None
+
+    monkeypatch.setattr(path_utils.os, "name", "nt")
+    monkeypatch.setattr(Path, "exists", lambda _path: False)
+    assert normalize_existing_path_case("C:/Mixed Case/Asset.txt") is None
 
 
 def test_replace_root() -> None:

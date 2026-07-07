@@ -43,7 +43,11 @@ from houdini_asset_relinker.ui.style import (
     STATUS_COLOR_NOT_UPDATABLE,
     STATUS_COLOR_READY,
 )
-from houdini_asset_relinker.ui.table_models import UpdateResultTableModel, _blend_hex_color
+from houdini_asset_relinker.ui.table_models import (
+    ReferenceFilterProxy,
+    UpdateResultTableModel,
+    _blend_hex_color,
+)
 from houdini_asset_relinker.ui.view_builders import REFERENCE_PATH_FAMILY_COLUMN
 from houdini_asset_relinker.ui.window import AssetRelinkerWindow
 
@@ -418,6 +422,28 @@ def test_reference_table_keeps_generated_outputs_out_of_broken_target_filter(qt_
         assert "1 generated outputs" in relinker.summary_label.text()
     finally:
         relinker.close()
+
+
+def test_filter_proxy_brackets_state_changes_with_modern_qt_api(qt_app) -> None:
+    """It changes custom filter state between beginFilterChange and endFilterChange."""
+    del qt_app
+
+    class TrackingProxy(ReferenceFilterProxy):
+        def __init__(self) -> None:
+            super().__init__()
+            self.events = []
+
+        def beginFilterChange(self) -> None:  # noqa: N802
+            self.events.append(("begin", self._search_text))
+
+        def endFilterChange(self) -> None:  # noqa: N802
+            self.events.append(("end", self._search_text))
+
+    proxy = TrackingProxy()
+
+    proxy.set_search_text("  Asset  ")
+
+    assert proxy.events == [("begin", ""), ("end", "asset")]
 
 
 def test_replacement_input_change_updates_live_preview(qt_app, relinker_window) -> None:

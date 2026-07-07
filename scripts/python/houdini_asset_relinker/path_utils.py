@@ -86,16 +86,33 @@ def normalize_existing_path_case(path_value: str) -> Optional[str]:
     except ImportError:
         return None
 
+    try:
+        kernel32 = ctypes.windll.kernel32
+    except AttributeError:
+        return None
+
     windows_path = normalized.replace("/", "\\")
-    kernel32 = ctypes.windll.kernel32
-    size = kernel32.GetLongPathNameW(windows_path, None, 0)
+    short_path = _read_windows_path_name(ctypes, kernel32.GetShortPathNameW, windows_path)
+    if short_path is None:
+        return None
+    long_path = _read_windows_path_name(ctypes, kernel32.GetLongPathNameW, short_path)
+    if long_path is None:
+        return None
+    return normalize_path_format(long_path)
+
+
+def _read_windows_path_name(
+    ctypes_module: object, path_function: object, path_value: str
+) -> Optional[str]:
+    """Read a Windows path transform from a size-probed Win32 path function."""
+    size = path_function(path_value, None, 0)
     if size <= 0:
         return None
-    buffer = ctypes.create_unicode_buffer(size)
-    result = kernel32.GetLongPathNameW(windows_path, buffer, size)
+    buffer = ctypes_module.create_unicode_buffer(size)
+    result = path_function(path_value, buffer, size)
     if result <= 0 or result > size:
         return None
-    return normalize_path_format(buffer.value)
+    return buffer.value
 
 
 def path_exists(expanded_path: str, sequence_path_pattern: str = "") -> bool:

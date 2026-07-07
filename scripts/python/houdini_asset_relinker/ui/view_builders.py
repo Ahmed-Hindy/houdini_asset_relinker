@@ -14,6 +14,8 @@ from houdini_asset_relinker.ui.qt_constants import (
     SINGLE_SELECTION,
 )
 from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
+    OPERATION_REPLACE_TEXT,
     SCOPE_ALL_ROWS,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
@@ -65,14 +67,16 @@ class RelinkPanelWidgets:
     """Widgets created for the relink panel."""
 
     panel: QtWidgets.QWidget
+    operation_combo: QtWidgets.QComboBox
+    find_label: QtWidgets.QLabel
     find_edit: QtWidgets.QLineEdit
+    replace_label: QtWidgets.QLabel
     replace_edit: QtWidgets.QLineEdit
     scope_combo: QtWidgets.QComboBox
     find_match_label: QtWidgets.QLabel
     case_sensitive_check: QtWidgets.QCheckBox
     include_hda_replace_check: QtWidgets.QCheckBox
     uninstall_old_hda_check: QtWidgets.QCheckBox
-    normalize_button: QtWidgets.QPushButton
     apply_button: QtWidgets.QPushButton
     copy_report_button: QtWidgets.QPushButton
     report_table: QtWidgets.QTableView
@@ -306,6 +310,11 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
     layout.setSpacing(8)
 
     form = QtWidgets.QFormLayout()
+    operation_combo = QtWidgets.QComboBox(parent)
+    operation_combo.setMinimumWidth(190)
+    operation_combo.setToolTip("Choose how the selected scope should be updated.")
+    operation_combo.addItem("Replace text", OPERATION_REPLACE_TEXT)
+    operation_combo.addItem("Clean path spelling", OPERATION_NORMALIZE_PATHS)
     find_edit = QtWidgets.QLineEdit(parent)
     find_edit.setPlaceholderText("P:/old_show or $JOB/assets")
     find_edit.setToolTip("Full words or partial text to find in reference paths.")
@@ -320,8 +329,11 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
     scope_combo.addItem("Selected path family", SCOPE_PATH_FAMILY)
     scope_combo.addItem("Missing under Find root", SCOPE_MISSING_UNDER_ROOT)
     scope_combo.addItem("All scanned rows", SCOPE_ALL_ROWS)
-    form.addRow("Find", find_edit)
-    form.addRow("Replace with", replace_edit)
+    find_label = QtWidgets.QLabel("Find", parent)
+    replace_label = QtWidgets.QLabel("Replace with", parent)
+    form.addRow("Path operation", operation_combo)
+    form.addRow(find_label, find_edit)
+    form.addRow(replace_label, replace_edit)
     form.addRow("Scope", scope_combo)
     layout.addLayout(form)
 
@@ -349,11 +361,6 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
     layout.addWidget(include_hda_replace_check)
     layout.addWidget(uninstall_old_hda_check)
 
-    normalize_button = QtWidgets.QPushButton("Normalize Paths", parent)
-    normalize_button.setObjectName("secondaryButton")
-    normalize_button.setToolTip(
-        "Preview separator and drive-letter cleanup for file parameters in the selected scope."
-    )
     apply_button = QtWidgets.QPushButton("Apply", parent)
     apply_button.setObjectName("applyButton")
     apply_button.setEnabled(False)
@@ -362,7 +369,6 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
     copy_report_button.setEnabled(False)
     copy_report_button.setToolTip("Copy the latest preview or apply report.")
     button_row = QtWidgets.QHBoxLayout()
-    button_row.addWidget(normalize_button)
     button_row.addWidget(apply_button)
     button_row.addWidget(copy_report_button)
     layout.addLayout(button_row)
@@ -403,14 +409,16 @@ def build_relink_panel(parent: QtWidgets.QWidget, report_model: object) -> Relin
 
     return RelinkPanelWidgets(
         panel=panel,
+        operation_combo=operation_combo,
+        find_label=find_label,
         find_edit=find_edit,
+        replace_label=replace_label,
         replace_edit=replace_edit,
         scope_combo=scope_combo,
         find_match_label=find_match_label,
         case_sensitive_check=case_sensitive_check,
         include_hda_replace_check=include_hda_replace_check,
         uninstall_old_hda_check=uninstall_old_hda_check,
-        normalize_button=normalize_button,
         apply_button=apply_button,
         copy_report_button=copy_report_button,
         report_table=report_table,

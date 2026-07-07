@@ -28,6 +28,7 @@ from houdini_asset_relinker.ui.qt_constants import (
 )
 from houdini_asset_relinker.ui.relink_state import (
     OPERATION_NORMALIZE_PATHS,
+    OPERATION_REPLACE_TEXT,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
     SCOPE_SELECTED_ROW,
@@ -100,6 +101,13 @@ def _set_scope(relinker: AssetRelinkerWindow, scope: str) -> None:
     index = relinker.scope_combo.findData(scope)
     assert index >= 0
     relinker.scope_combo.setCurrentIndex(index)
+
+
+def _set_operation(relinker: AssetRelinkerWindow, operation: str) -> None:
+    """Set the path operation combo by stored operation id."""
+    index = relinker.operation_combo.findData(operation)
+    assert index >= 0
+    relinker.operation_combo.setCurrentIndex(index)
 
 
 def _flush_live_relink_preview(qt_app) -> None:
@@ -286,6 +294,37 @@ def test_report_table_layout_and_legend(qt_app) -> None:
         relinker.close()
 
 
+def test_path_operation_selector_controls_relevant_fields(relinker_window) -> None:
+    """It hides replace-only controls when the path spelling cleanup mode is selected."""
+    assert relinker_window.operation_combo.currentText() == "Replace text"
+    assert not relinker_window.find_edit.isHidden()
+    assert not relinker_window.replace_edit.isHidden()
+    assert not relinker_window.case_sensitive_check.isHidden()
+    assert not relinker_window.include_hda_replace_check.isHidden()
+    missing_root_index = relinker_window.scope_combo.findData(SCOPE_MISSING_UNDER_ROOT)
+    assert relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+
+    _set_scope(relinker_window, SCOPE_MISSING_UNDER_ROOT)
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+
+    assert relinker_window.operation_combo.currentText() == "Clean path spelling"
+    assert relinker_window.scope_combo.currentData() == SCOPE_VISIBLE_ROWS
+    assert not relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+    assert relinker_window.find_edit.isHidden()
+    assert relinker_window.replace_edit.isHidden()
+    assert relinker_window.case_sensitive_check.isHidden()
+    assert relinker_window.include_hda_replace_check.isHidden()
+    assert relinker_window.find_match_label.isHidden()
+
+    _set_operation(relinker_window, OPERATION_REPLACE_TEXT)
+
+    assert relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+    assert not relinker_window.find_edit.isHidden()
+    assert not relinker_window.replace_edit.isHidden()
+    assert not relinker_window.case_sensitive_check.isHidden()
+    assert not relinker_window.include_hda_replace_check.isHidden()
+
+
 def test_reference_table_sorts_by_path_family_by_default(qt_app) -> None:
     """It opens the scan table sorted by raw-path family."""
     del qt_app
@@ -451,7 +490,7 @@ def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) 
     assert not relinker_window.apply_button.isEnabled()
 
 
-def test_normalize_paths_button_previews_current_scope(relinker_window) -> None:
+def test_clean_path_spelling_operation_previews_current_scope(qt_app, relinker_window) -> None:
     """It previews path-format cleanup through the shared report table."""
     relinker_window._reference_model.set_references(
         [
@@ -460,7 +499,8 @@ def test_normalize_paths_button_previews_current_scope(relinker_window) -> None:
         ]
     )
 
-    relinker_window.normalize_button.click()
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+    _flush_live_relink_preview(qt_app)
 
     assert relinker_window._relink_state.preview_request == ReplaceRequest(
         find_text="",
@@ -532,7 +572,8 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
 def test_apply_uses_the_stored_normalize_request(monkeypatch, relinker_window) -> None:
     """It applies the normalization request that produced the preview."""
     relinker_window._reference_model.set_references([_reference("p:\\old_show\\cache\\a.bgeo.sc")])
-    relinker_window.preview_normalize_paths()
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+    relinker_window.preview_replace()
 
     captured_requests: list[ReplaceRequest] = []
 

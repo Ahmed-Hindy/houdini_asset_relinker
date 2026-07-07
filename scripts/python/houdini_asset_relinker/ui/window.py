@@ -118,16 +118,8 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self.reference_table.selectRow(0)
 
     def preview_replace(self) -> None:
-        """Run a dry-run replacement preview from the current settings."""
+        """Run a dry-run path update preview from the current settings."""
         self._update_live_relink_preview(show_warnings=True)
-
-    def preview_normalize_paths(self) -> None:
-        """Run a dry-run path-format normalization preview for the current scope."""
-        self._update_path_preview(
-            self._current_normalize_request(),
-            show_warnings=True,
-            require_find_text=False,
-        )
 
     def apply_replace(self) -> None:
         """Apply the last previewed path update after confirmation."""
@@ -290,14 +282,16 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.export_button = widgets.reference_panel.export_button
         self.reference_table = widgets.reference_panel.reference_table
 
+        self.operation_combo = widgets.relink_panel.operation_combo
+        self.find_label = widgets.relink_panel.find_label
         self.find_edit = widgets.relink_panel.find_edit
+        self.replace_label = widgets.relink_panel.replace_label
         self.replace_edit = widgets.relink_panel.replace_edit
         self.scope_combo = widgets.relink_panel.scope_combo
         self.find_match_label = widgets.relink_panel.find_match_label
         self.case_sensitive_check = widgets.relink_panel.case_sensitive_check
         self.include_hda_replace_check = widgets.relink_panel.include_hda_replace_check
         self.uninstall_old_hda_check = widgets.relink_panel.uninstall_old_hda_check
-        self.normalize_button = widgets.relink_panel.normalize_button
         self.apply_button = widgets.relink_panel.apply_button
         self.copy_report_button = widgets.relink_panel.copy_report_button
         self.report_table = widgets.relink_panel.report_table
@@ -311,9 +305,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.scan_button.clicked.connect(self.scan)
         self.export_button.clicked.connect(self.export_csv)
         self.reset_filters_button.clicked.connect(self._reset_reference_filters)
-        self.normalize_button.clicked.connect(self.preview_normalize_paths)
         self.apply_button.clicked.connect(self.apply_replace)
         self.copy_report_button.clicked.connect(self.copy_report)
+        self.operation_combo.currentIndexChanged.connect(self._operation_changed)
         self.search_edit.textChanged.connect(self._proxy_model.set_search_text)
         self.search_edit.textChanged.connect(self._update_summary)
         self.missing_only_check.toggled.connect(self._proxy_model.set_show_missing_only)
@@ -325,6 +319,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.doubleClicked.connect(self._reference_double_clicked)
 
         for signal in (
+            self.operation_combo.currentIndexChanged,
             self.find_edit.textChanged,
             self.replace_edit.textChanged,
             self.case_sensitive_check.toggled,
@@ -351,8 +346,44 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._proxy_model.rowsRemoved.connect(self._update_summary)
         self._proxy_model.modelReset.connect(self._update_summary)
         self._sync_reference_filters()
+        self._sync_operation_controls()
         self._update_find_match_highlight()
         self._run_scheduled_live_relink_preview()
+
+    def _operation_changed(self, *_args: object) -> None:
+        self._sync_operation_controls()
+        self._update_find_match_highlight()
+
+    def _sync_operation_controls(self) -> None:
+        """Show only controls relevant to the selected path operation."""
+        replace_mode = self._current_operation() == OPERATION_REPLACE_TEXT
+        self._set_scope_enabled(SCOPE_MISSING_UNDER_ROOT, replace_mode)
+        if not replace_mode and self.scope_combo.currentData() == SCOPE_MISSING_UNDER_ROOT:
+            index = self.scope_combo.findData(SCOPE_VISIBLE_ROWS)
+            if index >= 0:
+                self.scope_combo.setCurrentIndex(index)
+        for widget in (
+            self.find_label,
+            self.find_edit,
+            self.replace_label,
+            self.replace_edit,
+            self.case_sensitive_check,
+            self.include_hda_replace_check,
+            self.uninstall_old_hda_check,
+        ):
+            widget.setVisible(replace_mode)
+        if not replace_mode:
+            self.find_match_label.clear()
+            self.find_match_label.hide()
+
+    def _set_scope_enabled(self, scope: str, enabled: bool) -> None:
+        """Set whether a scope combo item can be selected."""
+        index = self.scope_combo.findData(scope)
+        if index < 0:
+            return
+        item = getattr(self.scope_combo.model(), "item", lambda _index: None)(index)
+        if item is not None:
+            item.setEnabled(enabled)
 
     def _kind_filter_changed(self, *_args: object) -> None:
         self._proxy_model.set_kind_filter(self.kind_combo.currentData())
@@ -444,6 +475,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _update_find_match_highlight(self, *_args: object) -> None:
         """Update live Find match counts and highlight matching reference rows."""
+        if self._current_operation() != OPERATION_REPLACE_TEXT:
+            self._reference_model.set_find_highlight("", False)
+            self.find_match_label.clear()
+            self.find_match_label.hide()
+            return
+
         find_text = self.find_edit.text()
         case_sensitive = self.case_sensitive_check.isChecked()
         self._reference_model.set_find_highlight(find_text, case_sensitive)
@@ -467,6 +504,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             label += f" ({visible_match_count} {visible_noun} visible)"
         self.find_match_label.setText(label)
         self.find_match_label.setVisible(True)
+
+    def _current_operation(self) -> str:
+        operation = self.operation_combo.currentData()
+        return operation if isinstance(operation, str) else OPERATION_REPLACE_TEXT
+
+    def _current_path_request(self) -> ReplaceRequest:
+        if self._current_operation() == OPERATION_NORMALIZE_PATHS:
+            return self._current_normalize_request()
+        return self._current_replace_request()
 
     def _current_replace_request(self) -> ReplaceRequest:
         return ReplaceRequest(
@@ -539,11 +585,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._update_live_relink_preview(show_warnings=False)
 
     def _update_live_relink_preview(self, show_warnings: bool = False, *_args: object) -> None:
-        """Rebuild the relink report table from the current replacement settings."""
+        """Rebuild the report table from the current operation settings."""
+        request = self._current_path_request()
         self._update_path_preview(
-            self._current_replace_request(),
+            request,
             show_warnings=show_warnings,
-            require_find_text=True,
+            require_find_text=request.operation == OPERATION_REPLACE_TEXT,
         )
 
     def _update_path_preview(
@@ -702,7 +749,7 @@ def _scope_label(scope: str) -> str:
 def _operation_label(operation: str) -> str:
     """Return a user-facing label for a path update operation."""
     if operation == OPERATION_NORMALIZE_PATHS:
-        return "Normalize paths"
+        return "Clean path spelling"
     return "Relink assets"
 
 

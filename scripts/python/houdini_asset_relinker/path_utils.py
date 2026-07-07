@@ -75,12 +75,22 @@ def normalize_path_format(path_value: str) -> str:
 
 
 def normalize_existing_path_case(path_value: str) -> Optional[str]:
-    """Return ``path_value`` with filesystem casing when Windows can provide it."""
+    """Return ``path_value`` with filesystem spelling when it can be resolved safely."""
     normalized = normalize_path_format(path_value)
-    path = Path(normalized)
-    if os.name != "nt" or not path.is_absolute() or not path.exists():
+    if not _is_absolute_path(normalized):
         return None
 
+    if os.name != "nt":
+        return _posix_existing_path_case(normalized)
+
+    path = Path(normalized)
+    if not path.exists():
+        return None
+    return _windows_existing_path_case(normalized)
+
+
+def _windows_existing_path_case(path_value: str) -> Optional[str]:
+    """Return a Windows path with filesystem casing through Win32 path APIs."""
     try:
         import ctypes
     except ImportError:
@@ -91,7 +101,7 @@ def normalize_existing_path_case(path_value: str) -> Optional[str]:
     except AttributeError:
         return None
 
-    windows_path = normalized.replace("/", "\\")
+    windows_path = path_value.replace("/", "\\")
     short_path = _read_windows_path_name(ctypes, kernel32.GetShortPathNameW, windows_path)
     if short_path is None:
         return None
@@ -99,6 +109,45 @@ def normalize_existing_path_case(path_value: str) -> Optional[str]:
     if long_path is None:
         return None
     return normalize_path_format(long_path)
+
+
+def _posix_existing_path_case(path_value: str) -> Optional[str]:
+    """Return a POSIX path with filesystem casing by walking path components."""
+    parts = _path_parts(path_value)
+    current_path = Path("/")
+    resolved_parts = []
+    for path_part in parts:
+        if path_part in {".", ".."}:
+            return None
+        match = _case_matching_child(current_path, path_part)
+        if match is None:
+            return None
+        resolved_parts.append(match.name)
+        current_path = match
+    return "/" + "/".join(resolved_parts)
+
+
+def _case_matching_child(parent_path: Path, path_part: str) -> Optional[Path]:
+    """Return the uniquely matching child for a path segment."""
+    try:
+        children = list(parent_path.iterdir())
+    except OSError:
+        return None
+    exact_matches = [child for child in children if child.name == path_part]
+    if exact_matches:
+        return exact_matches[0]
+    folded_part = path_part.casefold()
+    folded_matches = [child for child in children if child.name.casefold() == folded_part]
+    if len(folded_matches) == 1:
+        return folded_matches[0]
+    return None
+
+
+def _is_absolute_path(path_value: str) -> bool:
+    """Return whether a normalized path is absolute for the active platform."""
+    if os.name == "nt":
+        return Path(path_value).is_absolute()
+    return path_value.startswith("/")
 
 
 def _read_windows_path_name(

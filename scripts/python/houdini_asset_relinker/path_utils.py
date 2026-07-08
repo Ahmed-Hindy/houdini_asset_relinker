@@ -57,6 +57,114 @@ def normalize_for_compare(path_value: str) -> str:
     return os.path.normcase(normalized.rstrip("/")).replace("\\", "/")
 
 
+def normalize_path_format(path_value: str) -> str:
+    """Return a display-safe path spelling with consistent separators.
+
+    This keeps Houdini variables, frame tokens, URI schemes, UNC roots, and
+    directory/file casing intact. Only path separators, duplicate slash runs,
+    and Windows drive-letter casing are normalized.
+    """
+    normalized = path_value.replace("\\", "/")
+    normalized = _collapse_path_separators(normalized)
+    drive_match = _WINDOWS_DRIVE_PATTERN.match(normalized)
+    if not drive_match:
+        return normalized
+    drive = drive_match.group(1).upper()
+    tail = drive_match.group(2)
+    return drive if tail is None else f"{drive}/{tail}"
+
+
+def normalize_existing_path_case(path_value: str) -> Optional[str]:
+    """Return ``path_value`` with filesystem spelling when it can be resolved safely."""
+    normalized = normalize_path_format(path_value)
+    if not _is_absolute_path(normalized):
+        return None
+
+    if os.name != "nt":
+        return _posix_existing_path_case(normalized)
+
+    path = Path(normalized)
+    if not path.exists():
+        return None
+    return _windows_existing_path_case(normalized)
+
+
+def _windows_existing_path_case(path_value: str) -> Optional[str]:
+    """Return a Windows path with filesystem casing through Win32 path APIs."""
+    try:
+        import ctypes
+    except ImportError:
+        return None
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+    except AttributeError:
+        return None
+
+    windows_path = path_value.replace("/", "\\")
+    short_path = _read_windows_path_name(ctypes, kernel32.GetShortPathNameW, windows_path)
+    if short_path is None:
+        return None
+    long_path = _read_windows_path_name(ctypes, kernel32.GetLongPathNameW, short_path)
+    if long_path is None:
+        return None
+    return normalize_path_format(long_path)
+
+
+def _posix_existing_path_case(path_value: str) -> Optional[str]:
+    """Return a POSIX path with filesystem casing by walking path components."""
+    root_prefix = "//" if path_value.startswith("//") else "/"
+    parts = _path_parts(path_value)
+    current_path = Path("/")
+    resolved_parts = []
+    for path_part in parts:
+        if path_part in {".", ".."}:
+            return None
+        match = _case_matching_child(current_path, path_part)
+        if match is None:
+            return None
+        resolved_parts.append(match.name)
+        current_path = match
+    return root_prefix + "/".join(resolved_parts)
+
+
+def _case_matching_child(parent_path: Path, path_part: str) -> Optional[Path]:
+    """Return the uniquely matching child for a path segment."""
+    try:
+        children = list(parent_path.iterdir())
+    except OSError:
+        return None
+    exact_matches = [child for child in children if child.name == path_part]
+    if exact_matches:
+        return exact_matches[0]
+    folded_part = path_part.casefold()
+    folded_matches = [child for child in children if child.name.casefold() == folded_part]
+    if len(folded_matches) == 1:
+        return folded_matches[0]
+    return None
+
+
+def _is_absolute_path(path_value: str) -> bool:
+    """Return whether a normalized path is absolute for the active platform."""
+    if os.name == "nt":
+        return Path(path_value).is_absolute()
+    return path_value.startswith("/")
+
+
+def _read_windows_path_name(
+    ctypes_module: object, path_function: object, path_value: str
+) -> Optional[str]:
+    """Read a Windows path transform from a size-probed Win32 path function."""
+    size = path_function(path_value, None, 0)
+    if size <= 0:
+        return None
+    buffer = ctypes_module.create_unicode_buffer(size)
+    result = path_function(path_value, buffer, size)
+    if result <= 0 or result > size:
+        return None
+    return buffer.value
+
+
 def path_exists(expanded_path: str, sequence_path_pattern: str = "") -> bool:
     """Return whether an expanded path exists.
 
@@ -262,6 +370,21 @@ def _family_parts(parts: list[str], depth: int) -> list[str]:
 def _path_parts(path_value: str) -> list[str]:
     """Split a normalized path into non-empty components."""
     return [part for part in path_value.split("/") if part]
+
+
+def _collapse_path_separators(path_value: str) -> str:
+    """Collapse duplicate separators without breaking UNC roots or URI schemes."""
+    if re.match(r"^[A-Za-z]:/", path_value):
+        return re.sub(r"/+", "/", path_value)
+
+    uri_match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*://)(.*)$", path_value)
+    if uri_match:
+        return uri_match.group(1) + re.sub(r"/+", "/", uri_match.group(2))
+
+    if path_value.startswith("//"):
+        return "//" + re.sub(r"/+", "/", path_value[2:].lstrip("/"))
+
+    return re.sub(r"/+", "/", path_value)
 
 
 def _looks_like_file_name(path_part: str) -> bool:

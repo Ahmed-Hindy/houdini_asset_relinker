@@ -40,6 +40,8 @@ from houdini_asset_relinker.ui.reference_display import (
     reference_status_text,
 )
 from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
+    OPERATION_REPLACE_TEXT,
     SCOPE_ALL_ROWS,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
@@ -116,28 +118,30 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self.reference_table.selectRow(0)
 
     def preview_replace(self) -> None:
-        """Run a dry-run replacement preview from the current settings."""
+        """Run a dry-run path update preview from the current settings."""
         self._update_live_relink_preview(show_warnings=True)
 
     def apply_replace(self) -> None:
-        """Apply the last previewed replacement after confirmation."""
+        """Apply the last previewed path update after confirmation."""
         preview_request = self._relink_state.preview_request
         if preview_request is None or not self._relink_state.has_preview_results():
-            self._warn("Preview replacements before applying changes.")
+            self._warn("Preview path changes before applying them.")
             return
-        if preview_request != self._current_replace_request():
-            self._update_live_relink_preview()
-            self._warn("Replacement settings changed. Review the live preview before applying.")
+
+        current_request = self._current_path_request()
+        if preview_request != current_request:
+            self._update_path_preview(
+                current_request,
+                show_warnings=False,
+                require_find_text=current_request.operation == OPERATION_REPLACE_TEXT,
+            )
+            self._warn("Preview settings changed. Review the latest preview before applying.")
             return
 
         answer = QtWidgets.QMessageBox.warning(
             self,
-            "Apply Asset Relinks",
-            (
-                "This will update Houdini parameters"
-                " and selected HDA libraries.\n\n"
-                "Save a copy of the hip file before applying large relinks."
-            ),
+            "Apply Asset Path Changes",
+            _operation_apply_message(preview_request.operation),
             MESSAGE_OK | MESSAGE_CANCEL,
             MESSAGE_CANCEL,
         )
@@ -148,7 +152,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         try:
             from houdini_asset_relinker.hou_access import undo_group
 
-            with undo_group("Relink Assets"):
+            with undo_group(_operation_label(preview_request.operation)):
                 report = build_replace_report(
                     preview_request,
                     self._relink_state.preview_references,
@@ -278,7 +282,10 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.export_button = widgets.reference_panel.export_button
         self.reference_table = widgets.reference_panel.reference_table
 
+        self.operation_combo = widgets.relink_panel.operation_combo
+        self.find_label = widgets.relink_panel.find_label
         self.find_edit = widgets.relink_panel.find_edit
+        self.replace_label = widgets.relink_panel.replace_label
         self.replace_edit = widgets.relink_panel.replace_edit
         self.scope_combo = widgets.relink_panel.scope_combo
         self.find_match_label = widgets.relink_panel.find_match_label
@@ -300,6 +307,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reset_filters_button.clicked.connect(self._reset_reference_filters)
         self.apply_button.clicked.connect(self.apply_replace)
         self.copy_report_button.clicked.connect(self.copy_report)
+        self.operation_combo.currentIndexChanged.connect(self._operation_changed)
         self.search_edit.textChanged.connect(self._proxy_model.set_search_text)
         self.search_edit.textChanged.connect(self._update_summary)
         self.missing_only_check.toggled.connect(self._proxy_model.set_show_missing_only)
@@ -311,6 +319,7 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.reference_table.doubleClicked.connect(self._reference_double_clicked)
 
         for signal in (
+            self.operation_combo.currentIndexChanged,
             self.find_edit.textChanged,
             self.replace_edit.textChanged,
             self.case_sensitive_check.toggled,
@@ -337,8 +346,44 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._proxy_model.rowsRemoved.connect(self._update_summary)
         self._proxy_model.modelReset.connect(self._update_summary)
         self._sync_reference_filters()
+        self._sync_operation_controls()
         self._update_find_match_highlight()
         self._run_scheduled_live_relink_preview()
+
+    def _operation_changed(self, *_args: object) -> None:
+        self._sync_operation_controls()
+        self._update_find_match_highlight()
+
+    def _sync_operation_controls(self) -> None:
+        """Show only controls relevant to the selected path operation."""
+        replace_mode = self._current_operation() == OPERATION_REPLACE_TEXT
+        self._set_scope_enabled(SCOPE_MISSING_UNDER_ROOT, replace_mode)
+        if not replace_mode and self.scope_combo.currentData() == SCOPE_MISSING_UNDER_ROOT:
+            index = self.scope_combo.findData(SCOPE_VISIBLE_ROWS)
+            if index >= 0:
+                self.scope_combo.setCurrentIndex(index)
+        for widget in (
+            self.find_label,
+            self.find_edit,
+            self.replace_label,
+            self.replace_edit,
+            self.case_sensitive_check,
+            self.include_hda_replace_check,
+            self.uninstall_old_hda_check,
+        ):
+            widget.setVisible(replace_mode)
+        if not replace_mode:
+            self.find_match_label.clear()
+            self.find_match_label.hide()
+
+    def _set_scope_enabled(self, scope: str, enabled: bool) -> None:
+        """Set whether a scope combo item can be selected."""
+        index = self.scope_combo.findData(scope)
+        if index < 0:
+            return
+        item = getattr(self.scope_combo.model(), "item", lambda _index: None)(index)
+        if item is not None:
+            item.setEnabled(enabled)
 
     def _kind_filter_changed(self, *_args: object) -> None:
         self._proxy_model.set_kind_filter(self.kind_combo.currentData())
@@ -430,6 +475,12 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
 
     def _update_find_match_highlight(self, *_args: object) -> None:
         """Update live Find match counts and highlight matching reference rows."""
+        if self._current_operation() != OPERATION_REPLACE_TEXT:
+            self._reference_model.set_find_highlight("", False)
+            self.find_match_label.clear()
+            self.find_match_label.hide()
+            return
+
         find_text = self.find_edit.text()
         case_sensitive = self.case_sensitive_check.isChecked()
         self._reference_model.set_find_highlight(find_text, case_sensitive)
@@ -454,6 +505,15 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self.find_match_label.setText(label)
         self.find_match_label.setVisible(True)
 
+    def _current_operation(self) -> str:
+        operation = self.operation_combo.currentData()
+        return operation if isinstance(operation, str) else OPERATION_REPLACE_TEXT
+
+    def _current_path_request(self) -> ReplaceRequest:
+        if self._current_operation() == OPERATION_NORMALIZE_PATHS:
+            return self._current_normalize_request()
+        return self._current_replace_request()
+
     def _current_replace_request(self) -> ReplaceRequest:
         return ReplaceRequest(
             find_text=self.find_edit.text(),
@@ -462,6 +522,18 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             include_hda_libraries=self.include_hda_replace_check.isChecked(),
             uninstall_old_hda_libraries=self.uninstall_old_hda_check.isChecked(),
             scope=self.scope_combo.currentData(),
+            operation=OPERATION_REPLACE_TEXT,
+        )
+
+    def _current_normalize_request(self) -> ReplaceRequest:
+        return ReplaceRequest(
+            find_text="",
+            replace_with="",
+            case_sensitive=False,
+            include_hda_libraries=False,
+            uninstall_old_hda_libraries=False,
+            scope=self.scope_combo.currentData(),
+            operation=OPERATION_NORMALIZE_PATHS,
         )
 
     def _resolve_replace_references(self, request: ReplaceRequest) -> list[AssetReference]:
@@ -508,12 +580,25 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
         self._update_live_relink_preview(show_warnings=False)
 
     def _update_live_relink_preview(self, show_warnings: bool = False, *_args: object) -> None:
-        """Rebuild the relink report table from the current replacement settings."""
+        """Rebuild the report table from the current operation settings."""
+        request = self._current_path_request()
+        self._update_path_preview(
+            request,
+            show_warnings=show_warnings,
+            require_find_text=request.operation == OPERATION_REPLACE_TEXT,
+        )
+
+    def _update_path_preview(
+        self,
+        request: ReplaceRequest,
+        show_warnings: bool = False,
+        require_find_text: bool = True,
+    ) -> None:
+        """Rebuild the report table from a path-update request."""
         if self._live_relink_preview_depth:
             return
         self._live_relink_preview_depth += 1
         try:
-            request = self._current_replace_request()
             if (
                 self._relink_state.current_report is not None
                 and not self._relink_state.current_report.dry_run
@@ -522,13 +607,13 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
                     return
                 self._relink_state.clear_applied_request()
 
-            if not request.find_text.strip():
+            if require_find_text and not request.find_text.strip():
                 self._clear_report()
                 return
             if not self._reference_model.references():
                 self._clear_report()
                 if show_warnings:
-                    self._warn("Scan the scene before previewing replacements.")
+                    self._warn("Scan the scene before previewing path changes.")
                 return
 
             references = self._resolve_replace_references(request)
@@ -555,8 +640,9 @@ class AssetRelinkerWindow(QtWidgets.QMainWindow):
             self._report_model.set_report(report)
             self.apply_button.setEnabled(bool(report.results))
             self.copy_report_button.setEnabled(bool(report.results))
+            operation_label = _operation_label(request.operation)
             self._set_status(
-                f"Preview: {report.changed_count} planned changes, "
+                f"{operation_label} preview: {report.changed_count} planned changes, "
                 f"{report.skipped_count} skipped, {report.failed_count} failed."
             )
         finally:
@@ -653,6 +739,26 @@ def _scope_label(scope: str) -> str:
         SCOPE_ALL_ROWS: "All scanned rows",
     }
     return labels.get(scope, scope)
+
+
+def _operation_label(operation: str) -> str:
+    """Return a user-facing label for a path update operation."""
+    if operation == OPERATION_NORMALIZE_PATHS:
+        return "Clean path spelling"
+    return "Relink assets"
+
+
+def _operation_apply_message(operation: str) -> str:
+    """Return confirmation text for a path update operation."""
+    if operation == OPERATION_NORMALIZE_PATHS:
+        return (
+            "This will update Houdini file parameters with normalized path spelling.\n\n"
+            "Save a copy of the hip file before applying broad path changes."
+        )
+    return (
+        "This will update Houdini parameters and selected HDA libraries.\n\n"
+        "Save a copy of the hip file before applying large relinks."
+    )
 
 
 if __name__ == "__main__":

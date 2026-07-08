@@ -27,6 +27,8 @@ from houdini_asset_relinker.ui.qt_constants import (
     TOOLTIP_ROLE,
 )
 from houdini_asset_relinker.ui.relink_state import (
+    OPERATION_NORMALIZE_PATHS,
+    OPERATION_REPLACE_TEXT,
     SCOPE_MISSING_UNDER_ROOT,
     SCOPE_PATH_FAMILY,
     SCOPE_SELECTED_ROW,
@@ -41,7 +43,11 @@ from houdini_asset_relinker.ui.style import (
     STATUS_COLOR_NOT_UPDATABLE,
     STATUS_COLOR_READY,
 )
-from houdini_asset_relinker.ui.table_models import UpdateResultTableModel, _blend_hex_color
+from houdini_asset_relinker.ui.table_models import (
+    ReferenceFilterProxy,
+    UpdateResultTableModel,
+    _blend_hex_color,
+)
 from houdini_asset_relinker.ui.view_builders import REFERENCE_PATH_FAMILY_COLUMN
 from houdini_asset_relinker.ui.window import AssetRelinkerWindow
 
@@ -99,6 +105,13 @@ def _set_scope(relinker: AssetRelinkerWindow, scope: str) -> None:
     index = relinker.scope_combo.findData(scope)
     assert index >= 0
     relinker.scope_combo.setCurrentIndex(index)
+
+
+def _set_operation(relinker: AssetRelinkerWindow, operation: str) -> None:
+    """Set the path operation combo by stored operation id."""
+    index = relinker.operation_combo.findData(operation)
+    assert index >= 0
+    relinker.operation_combo.setCurrentIndex(index)
 
 
 def _flush_live_relink_preview(qt_app) -> None:
@@ -285,6 +298,37 @@ def test_report_table_layout_and_legend(qt_app) -> None:
         relinker.close()
 
 
+def test_path_operation_selector_controls_relevant_fields(relinker_window) -> None:
+    """It hides replace-only controls when the path spelling cleanup mode is selected."""
+    assert relinker_window.operation_combo.currentText() == "Replace text"
+    assert not relinker_window.find_edit.isHidden()
+    assert not relinker_window.replace_edit.isHidden()
+    assert not relinker_window.case_sensitive_check.isHidden()
+    assert not relinker_window.include_hda_replace_check.isHidden()
+    missing_root_index = relinker_window.scope_combo.findData(SCOPE_MISSING_UNDER_ROOT)
+    assert relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+
+    _set_scope(relinker_window, SCOPE_MISSING_UNDER_ROOT)
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+
+    assert relinker_window.operation_combo.currentText() == "Clean path spelling"
+    assert relinker_window.scope_combo.currentData() == SCOPE_VISIBLE_ROWS
+    assert not relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+    assert relinker_window.find_edit.isHidden()
+    assert relinker_window.replace_edit.isHidden()
+    assert relinker_window.case_sensitive_check.isHidden()
+    assert relinker_window.include_hda_replace_check.isHidden()
+    assert relinker_window.find_match_label.isHidden()
+
+    _set_operation(relinker_window, OPERATION_REPLACE_TEXT)
+
+    assert relinker_window.scope_combo.model().item(missing_root_index).isEnabled()
+    assert not relinker_window.find_edit.isHidden()
+    assert not relinker_window.replace_edit.isHidden()
+    assert not relinker_window.case_sensitive_check.isHidden()
+    assert not relinker_window.include_hda_replace_check.isHidden()
+
+
 def test_reference_table_sorts_by_path_family_by_default(qt_app) -> None:
     """It opens the scan table sorted by raw-path family."""
     del qt_app
@@ -380,6 +424,28 @@ def test_reference_table_keeps_generated_outputs_out_of_broken_target_filter(qt_
         relinker.close()
 
 
+def test_filter_proxy_brackets_state_changes_with_modern_qt_api(qt_app) -> None:
+    """It changes custom filter state between beginFilterChange and endFilterChange."""
+    del qt_app
+
+    class TrackingProxy(ReferenceFilterProxy):
+        def __init__(self) -> None:
+            super().__init__()
+            self.events = []
+
+        def beginFilterChange(self) -> None:  # noqa: N802
+            self.events.append(("begin", self._search_text))
+
+        def endFilterChange(self) -> None:  # noqa: N802
+            self.events.append(("end", self._search_text))
+
+    proxy = TrackingProxy()
+
+    proxy.set_search_text("  Asset  ")
+
+    assert proxy.events == [("begin", ""), ("end", "asset")]
+
+
 def test_replacement_input_change_updates_live_preview(qt_app, relinker_window) -> None:
     """It keeps the relink report in sync while Find text changes."""
     relinker_window.find_edit.setText("P:/old_show")
@@ -450,6 +516,35 @@ def test_live_relink_preview_clears_when_find_is_empty(qt_app, relinker_window) 
     assert not relinker_window.apply_button.isEnabled()
 
 
+def test_clean_path_spelling_operation_previews_current_scope(qt_app, relinker_window) -> None:
+    """It previews path-format cleanup through the shared report table."""
+    relinker_window._reference_model.set_references(
+        [
+            _reference("p:\\old_show\\\\cache\\a.bgeo.sc"),
+            _reference("P:/old_show/cache/b.bgeo.sc"),
+        ]
+    )
+
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+    _flush_live_relink_preview(qt_app)
+
+    assert relinker_window._relink_state.preview_request == ReplaceRequest(
+        find_text="",
+        replace_with="",
+        case_sensitive=False,
+        include_hda_libraries=False,
+        uninstall_old_hda_libraries=False,
+        scope=SCOPE_VISIBLE_ROWS,
+        operation=OPERATION_NORMALIZE_PATHS,
+    )
+    assert relinker_window.apply_button.isEnabled()
+    assert relinker_window._report_model.rowCount() == 1
+    assert relinker_window._relink_state.current_report is not None
+    assert relinker_window._relink_state.current_report.results[0].new_path == (
+        "P:/old_show/cache/a.bgeo.sc"
+    )
+
+
 def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_window) -> None:
     """It applies the request that produced the preview."""
     relinker_window.find_edit.setText("P:/old_show")
@@ -498,6 +593,101 @@ def test_apply_uses_the_stored_preview_request(monkeypatch, qt_app, relinker_win
             scope=SCOPE_VISIBLE_ROWS,
         )
     ]
+
+
+def test_apply_uses_the_stored_normalize_request(monkeypatch, relinker_window) -> None:
+    """It applies the normalization request that produced the preview."""
+    relinker_window._reference_model.set_references([_reference("p:\\old_show\\cache\\a.bgeo.sc")])
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+    relinker_window.preview_replace()
+
+    captured_requests: list[ReplaceRequest] = []
+
+    def fake_build_replace_report(
+        request: ReplaceRequest,
+        references: list[AssetReference],
+        dry_run: bool,
+    ) -> UpdateReport:
+        del references
+        assert not dry_run
+        captured_requests.append(request)
+        return UpdateReport(
+            dry_run=False,
+            results=(
+                UpdateResult(
+                    status=UpdateStatus.CHANGED,
+                    old_path="p:\\old_show\\cache\\a.bgeo.sc",
+                    new_path="P:/old_show/cache/a.bgeo.sc",
+                    parm_path="/obj/geo1/file/file",
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(window_module, "build_replace_report", fake_build_replace_report)
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    assert captured_requests == [
+        ReplaceRequest(
+            find_text="",
+            replace_with="",
+            case_sensitive=False,
+            include_hda_libraries=False,
+            uninstall_old_hda_libraries=False,
+            scope=SCOPE_VISIBLE_ROWS,
+            operation=OPERATION_NORMALIZE_PATHS,
+        )
+    ]
+
+
+def test_apply_requires_preview_for_current_operation(monkeypatch, qt_app, relinker_window) -> None:
+    """It does not apply a stale replace preview after switching operations."""
+    relinker_window.find_edit.setText("P:/old_show")
+    relinker_window.replace_edit.setText("D:/new_show")
+    relinker_window._reference_model.set_references([_reference("P:/old_show/cache/a.bgeo.sc")])
+    _flush_live_relink_preview(qt_app)
+    _set_operation(relinker_window, OPERATION_NORMALIZE_PATHS)
+
+    report_calls: list[tuple[ReplaceRequest, bool]] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        window_module,
+        "build_replace_report",
+        lambda request, _references, dry_run: (
+            report_calls.append((request, dry_run)) or UpdateReport(dry_run=dry_run)
+        ),
+    )
+    monkeypatch.setattr(relinker_window, "scan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(relinker_window, "_warn", warnings.append)
+    monkeypatch.setattr(
+        window_module.QtWidgets.QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: window_module.MESSAGE_OK,
+    )
+
+    relinker_window.apply_replace()
+
+    assert report_calls == [
+        (
+            ReplaceRequest(
+                find_text="",
+                replace_with="",
+                case_sensitive=False,
+                include_hda_libraries=False,
+                uninstall_old_hda_libraries=False,
+                scope=SCOPE_VISIBLE_ROWS,
+                operation=OPERATION_NORMALIZE_PATHS,
+            ),
+            True,
+        )
+    ]
+    assert warnings == ["Preview settings changed. Review the latest preview before applying."]
 
 
 def test_preview_defaults_to_case_insensitive_windows_paths(relinker_window) -> None:

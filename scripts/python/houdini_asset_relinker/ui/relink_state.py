@@ -7,8 +7,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 from houdini_asset_relinker.models import AssetReference, UpdateReport, UpdateResult
-from houdini_asset_relinker.updater import replace_hda_library_paths, replace_path_text
+from houdini_asset_relinker.updater import (
+    normalize_path_formats,
+    replace_hda_library_paths,
+    replace_path_text,
+)
 
+OPERATION_REPLACE_TEXT = "replace_text"
+OPERATION_NORMALIZE_PATHS = "normalize_paths"
 SCOPE_VISIBLE_ROWS = "visible_rows"
 SCOPE_SELECTED_ROW = "selected_row"
 SCOPE_PATH_FAMILY = "path_family"
@@ -26,6 +32,7 @@ class ReplaceRequest:
     include_hda_libraries: bool
     uninstall_old_hda_libraries: bool
     scope: str
+    operation: str = OPERATION_REPLACE_TEXT
 
 
 @dataclass
@@ -89,6 +96,9 @@ def build_replace_report(
     dry_run: bool,
 ) -> UpdateReport:
     """Build a combined text-path and optional HDA relink report."""
+    if request.operation == OPERATION_NORMALIZE_PATHS:
+        return normalize_path_formats(dry_run=dry_run, references=references)
+
     reports = [
         replace_path_text(
             request.find_text,

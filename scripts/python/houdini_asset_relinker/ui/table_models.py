@@ -203,22 +203,30 @@ class ReferenceFilterProxy(QtCore.QSortFilterProxyModel):
 
     def set_search_text(self, text: str) -> None:
         """Set the free-text reference filter."""
-        self._search_text = text.casefold().strip()
-        self.invalidateFilter()
+        self._update_filter_state("_search_text", text.casefold().strip())
 
     def set_show_missing_only(self, enabled: bool) -> None:
         """Set whether only broken relink target rows are shown."""
-        self._show_missing_only = enabled
-        self.invalidateFilter()
+        self._update_filter_state("_show_missing_only", enabled)
 
     def set_show_writable_only(self, enabled: bool) -> None:
         """Set whether only writable references are shown."""
-        self._show_writable_only = enabled
-        self.invalidateFilter()
+        self._update_filter_state("_show_writable_only", enabled)
 
     def set_kind_filter(self, kind_filter: str) -> None:
         """Set the reference-kind filter."""
-        self._kind_filter = kind_filter
+        self._update_filter_state("_kind_filter", kind_filter)
+
+    def _update_filter_state(self, attribute_name: str, value: object) -> None:
+        """Update filter state across PySide versions without deprecation noise."""
+        begin_filter_change = getattr(self, "beginFilterChange", None)
+        end_filter_change = getattr(self, "endFilterChange", None)
+        if callable(begin_filter_change) and callable(end_filter_change):
+            begin_filter_change()
+            setattr(self, attribute_name, value)
+            end_filter_change()
+            return
+        setattr(self, attribute_name, value)
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:

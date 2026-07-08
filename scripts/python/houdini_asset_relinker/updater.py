@@ -14,7 +14,13 @@ from houdini_asset_relinker.models import (
     UpdateStatus,
     is_generated_output,
 )
-from houdini_asset_relinker.path_utils import replace_root, replace_text
+from houdini_asset_relinker.path_utils import (
+    normalize_existing_path_case,
+    normalize_for_compare,
+    normalize_path_format,
+    replace_root,
+    replace_text,
+)
 from houdini_asset_relinker.scanner import scan_assets, scan_hda_libraries
 
 
@@ -179,6 +185,48 @@ def replace_hda_library_paths(
                     )
                 )
     return UpdateReport(dry_run=dry_run, results=tuple(results))
+
+
+def normalize_path_formats(
+    dry_run: bool = True,
+    references: Optional[Iterable[AssetReference]] = None,
+) -> UpdateReport:
+    """Normalize separator style for writable file parameter paths.
+
+    Args:
+        dry_run: When True, report what would change without modifying the scene.
+        references: Optional pre-scanned references. When omitted, the current scene is scanned.
+
+    Returns:
+        An update report.
+    """
+    from contextlib import nullcontext
+
+    from houdini_asset_relinker.hou_access import undo_group
+
+    current_references = (
+        list(references) if references is not None else scan_assets(include_hda_libraries=False)
+    )
+    results = []
+    context = nullcontext() if dry_run else undo_group("Normalize Asset Paths")
+    with context:
+        for reference in current_references:
+            if reference.kind != ReferenceKind.FILE_PARAMETER:
+                continue
+            new_path = _normalize_reference_path_format(reference)
+            if new_path == reference.raw_path:
+                continue
+            results.append(_set_reference_path(reference, new_path, dry_run))
+    return UpdateReport(dry_run=dry_run, results=tuple(results))
+
+
+def _normalize_reference_path_format(reference: AssetReference) -> str:
+    """Return the safest normalized spelling for a scanned reference path."""
+    normalized_path = normalize_path_format(reference.raw_path)
+    if normalize_for_compare(reference.raw_path) != normalize_for_compare(reference.expanded_path):
+        return normalized_path
+    existing_case_path = normalize_existing_path_case(reference.expanded_path)
+    return existing_case_path or normalized_path
 
 
 def _set_reference_path(reference: AssetReference, new_path: str, dry_run: bool) -> UpdateResult:

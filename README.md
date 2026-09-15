@@ -4,6 +4,8 @@ A friendly Python tool for auditing, finding, and replacing external asset paths
 
 ![Houdini Asset Relinker UI](images/screenshot.png)
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
 ---
 
 ## What It Does
@@ -69,3 +71,9 @@ To update multiple paths at once:
 - **Backup**: Always save a backup copy of your `.hip` file before applying large path replacements.
 - **Limit Scope**: Keep the relink scope on the smallest useful target set before previewing and applying.
 - **HDA Uninstall**: When relinking HDA libraries, checking *Uninstall old HDA libraries* will automatically clean up the old library paths from the session.
+
+---
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

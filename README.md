@@ -2,9 +2,9 @@
 
 A friendly Python tool for auditing, finding, and replacing external asset paths (like textures, geometry caches, USD files, and HDAs) in your current Houdini session.
 
-![Houdini Asset Relinker UI](images/screenshot.png)
-
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
+![Houdini Asset Relinker UI](images/screenshot.png)
 
 ---
 
